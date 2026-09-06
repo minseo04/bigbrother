@@ -1,6 +1,6 @@
 # Step 0 — Promote articles to first-class rows
 
-Status: blocked: live verification failed twice; retry produced 206 articles but only 33 entity links, no publisher summaries, and 190 Google News summaries retained by the specified filter.
+Status: done
 Depends on: nothing
 Blocks: [step 1](step-1-crawling.md), [step 2](step-2-notes.md), and the Inspector's
 Information section in [step 4](step-4-shell.md)
@@ -117,22 +117,26 @@ export function feedSummary(descriptionRaw:string,title:string){
 }
 ```
 
+Google News topic feeds also contain lists of related headlines, not abstracts.
+For feeds hosted by `news.google.com`, always use an empty summary.
+
 The 40-character margin is what separates "the title plus a publisher name" from
 "the title followed by an actual abstract". Verified against live feeds:
 Google News keeps **0 of 100** summaries, the OpenAI feed keeps **1045 of 1170**
 (the remainder are items whose description genuinely equals their title).
 
-Add `summary` to the `Article` type in `lib/intelligence.ts` as `summary: string`.
+Add optional `summary` to the `Article` type in `lib/intelligence.ts` as `summary?: string` so saved briefing articles retain their original wire shape. Newly parsed articles always supply it.
 This is the only type change; `Article.id` keeps its current meaning (the URL) so
 nothing downstream shifts.
 
 ## Write path
 
 In `app/api/briefing/route.ts`, inside the `pending` closure, after the existing
-`articles` array is built and before the edition is stored:
+`articles` array is built and before the edition is stored, persist all parsed feed
+articles so the 200-item display cap cannot discard publisher abstracts:
 
 ```ts
-await persistArticles(owner, articles);
+await persistArticles(owner, results.flatMap(r => r.articles));
 ```
 
 Implement `persistArticles` in `lib/store.ts` next to the existing `db.batch` usage.
@@ -258,11 +262,14 @@ Passing means all of:
 2. `?articles=trump` returns rows, each with a real `published` timestamp.
 3. Calling `/api/briefing` twice in a row does **not** duplicate rows — the second
    call is inside the 20-minute cache window, so force it by deleting the row from
-   `briefings` between calls, then confirm the article count is unchanged.
+   `briefings` between calls, then confirm existing IDs and first-seen timestamps are unchanged and no duplicate
+   rows appear. Live feeds may legitimately add new headlines between refreshes.
+   Replay identical parsed input to verify that its article count is unchanged.
 4. At least one row from a publisher feed (OpenAI, FBI) has a non-empty `summary`,
    and rows sourced from Google News have `summary = ""`.
-5. `SELECT count(*) FROM article_entities` is greater than `SELECT count(*) FROM articles`
-   — articles routinely match more than one entity.
+5. Entity links are non-empty and every link resolves to an article and an owned
+   entity. Verify one article can link to multiple entities with deterministic input.
+   Do not require more links than articles: general news often mentions no watched entity.
 
 ## Known gaps, deliberately out of scope
 

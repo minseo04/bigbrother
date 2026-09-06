@@ -1,5 +1,5 @@
 import {authenticatedUser,unauthorized} from "@/lib/access";
-import {database,getWorkspace,initialize} from "@/lib/store";
+import {database,getWorkspace,initialize,persistArticles} from "@/lib/store";
 import {fetchFeed,newsSources} from "@/lib/feeds";
 import type {Briefing,Article} from "@/lib/intelligence";
 const json=(data:unknown,status=200)=>Response.json(data,{status,headers:{"Cache-Control":"private, no-store"}});
@@ -9,7 +9,8 @@ const today=new Date().toISOString().slice(0,10);const requested=params.get("dat
 if(requested)return cached?json(JSON.parse(cached.content)):json({error:"No briefing was saved on that date."},404);
 if(cached&&Date.now()-Date.parse(cached.updated)<20*60000)return json(JSON.parse(cached.content));
 let pending=pendingByOwner.get(owner);if(!pending){pending=(async()=>{const {entities}=await getWorkspace(owner);const sources=newsSources();const results=await Promise.all(sources.map(s=>fetchFeed(s,entities)));const seen=new Set<string>();const seenTitles=new Set<string>();const articles:Article[]=results.flatMap(r=>r.articles).sort((a,b)=>b.published.localeCompare(a.published)).filter(a=>{const title=a.title.toLowerCase().replace(/[^\p{L}\p{N}]/gu,"");if(seen.has(a.url)||seenTitles.has(title))return false;seen.add(a.url);seenTitles.add(title);return true}).slice(0,200);
-const previous=cached?JSON.parse(cached.content) as Briefing:null;const allFailed=results.every(r=>r.source.status==="error");const edition:Briefing={date:today,updated:new Date().toISOString(),articles:allFailed&&previous?previous.articles:articles,sources:results.map(r=>r.source)};
+try{await persistArticles(owner,results.flatMap(r=>r.articles));}catch(e){console.error("Article persistence failed",e);}
+const previous=cached?JSON.parse(cached.content) as Briefing:null;const allFailed=results.every(r=>r.source.status==="error");const edition:Briefing={date:today,updated:new Date().toISOString(),articles:allFailed&&previous?previous.articles:articles.map(a=>({id:a.id,title:a.title,url:a.url,source:a.source,published:a.published,entities:a.entities})),sources:results.map(r=>r.source)};
 if(!allFailed)await db.prepare("INSERT INTO briefings (owner_id,date,content,updated) VALUES (?,?,?,?) ON CONFLICT(owner_id,date) DO UPDATE SET content=excluded.content,updated=excluded.updated").bind(owner,today,JSON.stringify(edition),edition.updated).run();return edition;})().finally(()=>{pendingByOwner.delete(owner)});pendingByOwner.set(owner,pending);}return json(await pending);
 }catch(e){console.error("Briefing failed",e);return json({error:"The briefing is temporarily unavailable. Your saved workspace is safe."},503)}}
 
