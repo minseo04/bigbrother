@@ -2,7 +2,8 @@
 
 Status: not started
 Depends on: nothing
-Blocks: step 1 (per-node crawling), step 2 (notes), the per-node dossier UI
+Blocks: [step 1](step-1-crawling.md), [step 2](step-2-notes.md), and the Inspector's
+Information section in [step 4](step-4-shell.md)
 
 ## Why
 
