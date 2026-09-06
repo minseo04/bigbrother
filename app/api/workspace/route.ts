@@ -1,0 +1,23 @@
+import {authenticatedUser,unauthorized} from "@/lib/access";
+import {database,getWorkspace,initialize} from "@/lib/store";
+import {kinds,safeWebUrl} from "@/lib/intelligence";
+function json(data:unknown,status=200){return Response.json(data,{status,headers:{"Cache-Control":"private, no-store"}});}
+export async function GET(request:Request){const owner=authenticatedUser(request);if(!owner)return unauthorized();try{return json(await getWorkspace(owner))}catch(e){console.error("Workspace read failed",e);return json({error:"Saved data is temporarily unavailable. Please retry."},503)}}
+export async function POST(request:Request){
+const owner=authenticatedUser(request);if(!owner)return unauthorized();
+const origin=request.headers.get("origin");if(origin&&origin!==new URL(request.url).origin)return json({error:"Request origin is not allowed."},403);
+if(!request.headers.get("content-type")?.includes("application/json"))return json({error:"JSON is required."},415);
+let b:any;try{const raw=await request.text();if(raw.length>6000)return json({error:"Request is too large."},413);b=JSON.parse(raw);if(!b||typeof b!=="object"||Array.isArray(b))throw Error();}catch{return json({error:"Invalid request."},400)}
+try{await initialize(owner);const db=database();
+if(b.action==="follow"){if(typeof b.id!=="string"||typeof b.followed!=="boolean")return json({error:"A valid entity and follow state are required."},400);const exists=await db.prepare("SELECT id FROM entities WHERE owner_id=? AND id=?").bind(owner,b.id).first();if(!exists)return json({error:"Entity not found."},404);await db.prepare("UPDATE entities SET followed=? WHERE owner_id=? AND id=?").bind(b.followed?1:0,owner,b.id).run();return json({ok:true});}
+if(b.action==="add"){const name=typeof b.name==="string"?b.name.trim():"";const source=safeWebUrl(b.source);if(name.length<2||name.length>100||!kinds.includes(b.kind)||!source)return json({error:"Enter a name (2–100 characters), a category, and a public source URL."},400);
+const count=await db.prepare("SELECT count(*) AS total FROM entities WHERE owner_id=?").bind(owner).first<{total:number}>();if((count?.total??0)>=100)return json({error:"This workspace supports up to 100 entities."},400);
+const exists=await db.prepare("SELECT id FROM entities WHERE owner_id=? AND name_key=?").bind(owner,name.toLowerCase()).first();if(exists)return json({error:"That entity is already in your workspace."},409);
+const id=crypto.randomUUID();const initials=name.split(/\s+/).slice(0,2).map((s:string)=>s[0]).join("").toUpperCase();const color=b.kind==="Person"?"#ed997b":b.kind==="Company"?"#86a8fc":b.kind==="Government"?"#c2acf0":"#78c7af";
+await db.prepare("INSERT INTO entities (owner_id,id,name,name_key,kind,initials,description,aliases,followed,source,color) VALUES (?,?,?,?,?,?,?,?,?,?,?)").bind(owner,id,name,name.toLowerCase(),b.kind,initials,"Added to your personal watchlist.",JSON.stringify([name]),1,source,color).run();return json({ok:true,id},201);}
+if(b.action==="connect"){const from=typeof b.from==="string"?b.from:"",to=typeof b.to==="string"?b.to:"",label=typeof b.label==="string"?b.label.trim():"",evidence=typeof b.evidence==="string"?b.evidence.trim():"",url=safeWebUrl(b.url);if(!from||!to||from===to||!label||label.length>100||!evidence||evidence.length>1200||!url||!["Documented","Hypothesis"].includes(b.status)||!/^\d{4}-\d{2}-\d{2}$/.test(b.date??"")||Number.isNaN(Date.parse(b.date))||new Date(b.date).toISOString().slice(0,10)!==b.date||b.date>new Date().toISOString().slice(0,10))return json({error:"Choose two different entities and provide evidence, a valid source URL, and a source date no later than today."},400);
+const nodes=await db.prepare("SELECT id FROM entities WHERE owner_id=? AND id IN (?,?)").bind(owner,from,to).all();if(nodes.results.length!==2)return json({error:"Both entities must exist."},400);const id=crypto.randomUUID();await db.prepare("INSERT INTO connections (owner_id,id,from_id,to_id,label,evidence,url,date,status) VALUES (?,?,?,?,?,?,?,?,?)").bind(owner,id,from,to,label,evidence,url,b.date,b.status).run();return json({ok:true,id},201);}
+return json({error:"Unknown action."},400);
+}catch(e){console.error("Workspace update failed",e);return json({error:"The change could not be saved. Please retry."},503)}
+}
+
