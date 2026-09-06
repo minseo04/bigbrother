@@ -1,5 +1,5 @@
 export type EntityKind = "Person" | "Company" | "Government" | "Technology";
-export type Entity = { id: string; name: string; kind: EntityKind; initials: string; description: string; aliases: string[]; followed: boolean; source: string; color: string };
+export type Entity = { id: string; name: string; kind: EntityKind; initials: string; description: string; aliases: string[]; followed: boolean; source: string; color: string; feedUrl?: string; lastCrawled?: string };
 export type Connection = { id: string; from: string; to: string; label: string; evidence: string; url: string; date: string; status: "Documented" | "Hypothesis"; };
 export type Article = { id: string; title: string; url: string; source: string; summary?: string; published: string; entities: string[]; };
 export type Source = { id: string; name: string; url: string; feed: string; status?: string; count?: number; checked?: string };
