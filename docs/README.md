@@ -24,6 +24,27 @@ Steps 0–2 are data and can be done in any order after 0. Steps 3–5 are UI. I
 only have appetite for one track, 0→1→2 makes the app more useful; 3→4 makes it feel
 like a different product.
 
+## What to load for a step
+
+This file is an index, not a container — it holds the conventions every step assumes,
+not the steps themselves. Load it alongside the one step you are working on, and
+nothing else. A finished step lives in the code; its document is not context for the
+next one.
+
+| Working on | Load |
+|---|---|
+| Step 0 | this file + `step-0-articles.md` |
+| Step 1 | this file + `step-1-crawling.md` |
+| Step 2 | this file + `step-2-notes.md` |
+| Dark migration | this file + `design-system.md` |
+| Step 3 | this file + `design-system.md` + `step-3-graph-editor.md` |
+| Step 4 | this file + `design-system.md` + `step-4-shell.md` |
+| Step 5 | this file + `design-system.md` + `step-5-timeline.md` |
+
+The largest combination is about 4,900 tokens. Loading the whole `docs/` directory at
+once costs roughly 14,000 and makes it likelier that the conventions here get skimmed
+in favour of whichever step happens to be longest.
+
 ## Conventions every step follows
 
 **Additive first.** Prefer adding a table or a query parameter over changing an
