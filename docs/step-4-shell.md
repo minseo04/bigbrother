@@ -1,9 +1,29 @@
 # Step 4 — Editor shell
 
 Status: not started
-Depends on: [step 3](step-3-graph-editor.md), [design-system.md](design-system.md);
-uses [step 1](step-1-crawling.md) and [step 2](step-2-notes.md) data if present
-Blocks: [step 5](step-5-timeline.md)
+Depends on: nothing outstanding — every other step is done and merged into this branch
+
+## Starting point
+
+Steps 0–3 and 5 all landed before this one, so parts of what follows are already
+true. Read this section before the rest of the document, which was written against
+the pre-step-3 codebase.
+
+Already done, do not redo:
+
+- The colour migration. `design-system.md` is applied; step 1 below is complete.
+- `locations`, the hand-written coordinate table, and the old `Graph` component are
+  gone. React Flow renders the viewport from `components/graph-editor.tsx`.
+- `components/graph-timeline.tsx` exists and works (step 5). It needs a home in the
+  shell, not an implementation.
+- `components/notes-panel.tsx` exists and is mounted inside the entity `Sheet`.
+  Lift it into the Inspector rather than rebuilding it.
+
+Still true:
+
+- `app/page.tsx` is one client component, about 25 KB, holding 31 `useState` calls
+  and the five-view router. This step is what breaks it up.
+- The entity `Sheet` is still the only place entity detail appears.
 
 ## Why
 
@@ -145,9 +165,15 @@ Below the minimum width, render a single message rather than a broken layout.
 5. Bottom dock tabs.
 6. Delete Overview and the view router.
 
-`app/page.tsx` is a single 27 KB component holding roughly 25 `useState` calls. It
+Step 1 above is already done — start at step 2.
+
+`app/page.tsx` is one component holding 31 `useState` calls and the view router. It
 does not survive this step intact. Split it as the panels are built — one file per
 region, with the zustand store from step 3 as the seam between them.
+
+Commit after each of the six, not at the end. A half-finished rewrite of this file
+leaves the app unable to render at all, so each commit needs to be a point the app
+still runs from.
 
 ## Verification
 
