@@ -1,0 +1,2 @@
+import {create} from "zustand";
+export const useWorkspaceStore=create<{selectedEntityId:string|null;selectedConnectionId:string|null;selectEntity:(id:string)=>void;selectConnection:(id:string)=>void;clearSelection:()=>void}>(set=>({selectedEntityId:null,selectedConnectionId:null,selectEntity:id=>set({selectedEntityId:id,selectedConnectionId:null}),selectConnection:id=>set({selectedEntityId:null,selectedConnectionId:id}),clearSelection:()=>set({selectedEntityId:null,selectedConnectionId:null})}));
