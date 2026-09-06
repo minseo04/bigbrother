@@ -1,6 +1,6 @@
 # Step 2 — Notes
 
-Status: not started
+Status: done
 Depends on: [step 0](step-0-articles.md) for article notes; entity and connection
 notes need nothing
 Blocks: the Inspector's notes section in [step 4](step-4-shell.md)
@@ -114,3 +114,4 @@ Passing means:
 3. `POST` against `kind=entity&id=nonexistent` returns 404, not 201.
 4. `POST` with an 9000-character body returns 400 with a readable sentence.
 5. A note written against one entity does not appear in another entity's list.
+
