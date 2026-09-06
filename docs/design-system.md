@@ -1,5 +1,7 @@
 # Design system — dark editor
 
+Status: done
+
 The app moves to a fully dark interface. Read this before steps 3, 4 or 5.
 
 ## Why dark, and what it costs
