@@ -72,14 +72,19 @@ The dev server runs on port 3000 (`npm run dev`). `.claude/launch.json` has the
 config if you drive it through tooling.
 
 **Signing in.** API routes require the `oai-authenticated-user-id` header, which
-`@openai/sites-vite-plugin` injects — and it strips any client-supplied copy, so you
-cannot fake it with curl. Visit `/signin-with-chatgpt` once in the browser to get the
-`__sites_local_auth=1` cookie; the plugin then supplies the identity `local_seedy`.
-After that:
+`@openai/sites-vite-plugin` injects — and it strips any client-supplied copy, so
+setting that header yourself does nothing. Sign in through the plugin's local route
+instead; no browser is needed:
 
 ```bash
-curl -s -H "Cookie: __sites_local_auth=1" http://localhost:3000/api/workspace
+curl -s -c cookies.txt http://localhost:3000/signin-with-chatgpt
+curl -s -b cookies.txt http://localhost:3000/api/workspace
 ```
+
+`/signin-with-chatgpt` sets `__sites_local_auth=1`, after which the plugin supplies
+the identity `local_seedy` on every request. The route only answers for localhost
+origins, so this works in development and nowhere else. `-H "Cookie: __sites_local_auth=1"`
+is equivalent if you would rather not keep a jar.
 
 **Migrations.** `npm run db:generate` writes SQL to `drizzle/`. Applying it to the
 local D1 needs a standalone wrangler config, because the binding is declared inline
