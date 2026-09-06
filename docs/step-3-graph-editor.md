@@ -1,6 +1,6 @@
 # Step 3 — Graph editor
 
-Status: blocked: required browser drag, reload, and undo verification cannot run; browser startup failed twice, including after a session reset (Windows sandbox setup refresh errors, then trusted Node process exit).
+Status: done
 Depends on: [design-system.md](design-system.md)
 Blocks: [step 4](step-4-shell.md), [step 5](step-5-timeline.md)
 
