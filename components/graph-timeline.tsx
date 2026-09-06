@@ -1,0 +1,8 @@
+"use client";
+
+type Props={from:string;to:string;value:string;hiddenConnections:number;onChange:(value:string)=>void};
+const DAY=86_400_000;
+const toDay=(value:string)=>Math.floor(Date.parse(value+"T00:00:00Z")/DAY);
+const toKey=(day:number)=>new Date(day*DAY).toISOString().slice(0,10);
+function shift(value:string,months:number,years:number,from:string,to:string){const date=new Date(value+"T00:00:00Z");date.setUTCFullYear(date.getUTCFullYear()+years);date.setUTCMonth(date.getUTCMonth()+months);const key=date.toISOString().slice(0,10);return key<from?from:key>to?to:key;}
+export function TimelineScrubber({from,to,value,hiddenConnections,onChange}:Props){const label=new Intl.DateTimeFormat("en-GB",{day:"numeric",month:"long",year:"numeric",timeZone:"UTC"}).format(new Date(value+"T00:00:00Z"));return <div className="graph-timeline"><div className="timeline-heading"><label htmlFor="graph-as-of">Network as of <strong>{label}</strong></label>{value<to&&<span>{hiddenConnections} {hiddenConnections===1?"connection":"connections"} after {label}</span>}</div><input id="graph-as-of" aria-label="Network as of date" type="range" min={toDay(from)} max={toDay(to)} value={toDay(value)} onChange={event=>onChange(toKey(Number(event.target.value)))} onDoubleClick={()=>onChange(to)} onKeyDown={event=>{if(event.key!=="ArrowLeft"&&event.key!=="ArrowRight")return;event.preventDefault();const direction=event.key==="ArrowLeft"?-1:1;onChange(shift(value,event.shiftKey?0:direction,event.shiftKey?direction:0,from,to));}}/><p>Dates reflect when each source was published or checked, which may differ from when the relationship began.</p></div>}

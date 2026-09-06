@@ -1,6 +1,6 @@
 # Step 5 — Timeline
 
-Status: not started
+Status: done
 Depends on: [step 3](step-3-graph-editor.md), [step 4](step-4-shell.md); much better
 with [step 0](step-0-articles.md)
 
