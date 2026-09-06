@@ -1,6 +1,6 @@
 # Step 0 — Promote articles to first-class rows
 
-Status: not started
+Status: blocked: live verification failed twice; retry produced 206 articles but only 33 entity links, no publisher summaries, and 190 Google News summaries retained by the specified filter.
 Depends on: nothing
 Blocks: [step 1](step-1-crawling.md), [step 2](step-2-notes.md), and the Inspector's
 Information section in [step 4](step-4-shell.md)
