@@ -1,6 +1,6 @@
 # Step 4 — Editor shell
 
-Status: not started
+Status: done
 Depends on: nothing outstanding — every other step is done and merged into this branch
 
 ## Starting point
