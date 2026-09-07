@@ -1,6 +1,6 @@
 # Step 3 — Graph editor
 
-Status: not started
+Status: done
 Depends on: [design-system.md](design-system.md)
 Blocks: [step 4](step-4-shell.md), [step 5](step-5-timeline.md)
 

@@ -1,6 +1,6 @@
 # Step 1 — Per-node crawling
 
-Status: not started
+Status: done
 Depends on: [step 0](step-0-articles.md)
 Blocks: the per-node dossier panel in [step 4](step-4-shell.md)
 
