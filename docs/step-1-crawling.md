@@ -38,11 +38,16 @@ lastCrawled:text("last_crawled").notNull().default("")
 
 `feed_url` empty means "derive a Google News search from the entity name".
 A non-empty value overrides it — this is how you point a node at a publisher's own
-RSS, which is always higher quality than a news aggregator:
+RSS, which is higher quality than a news aggregator: first-party wording, a real
+`<description>` to store as the summary, and no unrelated matches.
 
-```
-palantir  → https://investors.palantir.com/rss/news-releases.xml
-anduril   → https://www.anduril.com/news/rss
+Feed URLs have to be found per entity and verified by hand; do not assume a
+conventional path exists. `investors.palantir.com/rss/news-releases.xml` looks
+plausible and returns `text/html`, which `parseRss` rejects. Confirm a candidate
+returns RSS before saving it:
+
+```bash
+curl -s -o /dev/null -w "%{content_type}\n" <candidate-url>
 ```
 
 Expose it on the existing `POST /api/workspace` `add` action as an optional
