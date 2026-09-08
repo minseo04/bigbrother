@@ -27,3 +27,16 @@
 .shell-toolbar{justify-content:space-between}.shell-tools{display:flex;gap:4px}.shell-tools button{display:flex;align-items:center;gap:5px;height:30px;padding:0 7px;border-radius:var(--radius-sm);color:var(--text-secondary);font-size:10px}.shell-tools button:hover{background:var(--surface-2)}.shell-tools button.active{background:var(--accent-bg);color:var(--text-primary)}.shell-tools button kbd{display:grid;place-items:center;width:18px;height:18px;border:1px solid var(--border);border-radius:var(--radius-sm)}.shell-search{display:flex;align-items:center;gap:7px;width:280px;padding:5px 8px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface-0);color:var(--text-muted)}.shell-search input{min-width:0;flex:1;border:0;outline:0;background:transparent;color:var(--text-primary);font-size:11px}.shell-search kbd{font-size:9px}.graph-workspace,.graph-workspace>.flow-graph{height:100%}.graph-workspace>.flow-graph{border:0;border-radius:0}.graph-workspace .flow-canvas{height:calc(100% - 142px);min-height:400px}.editor-shell .shell-viewport{overflow:hidden}.shell-message{position:absolute;z-index:70;top:58px;left:50%;max-width:520px;transform:translateX(-50%)}
 
 .edge-context-target{position:absolute;width:30px;height:30px;border-radius:50%;pointer-events:all}
+.inspector-feed{padding:18px 0;border-bottom:none}
+.inspector-feed h3{margin:0 0 12px;font-size:11px;letter-spacing:1px;text-transform:uppercase;color:var(--text-primary)}
+.inspector-feed>.source-link{margin:10px 0 0}
+.feed-form{display:flex;flex-direction:column;gap:10px;margin-top:14px}
+.feed-form label{display:flex;flex-direction:column;gap:6px;font-size:11px;letter-spacing:1px;text-transform:uppercase;color:var(--text-secondary)}
+.feed-form input{padding:9px 11px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface-1);color:var(--text-primary);font-size:13px;text-transform:none;letter-spacing:0}
+.feed-form input:hover{border-color:var(--border-strong)}
+.feed-actions{display:flex;align-items:center;gap:12px}
+.feed-actions .primary-button{flex:0 0 auto}
+.label-hint{font-size:10px;color:var(--text-muted);letter-spacing:1px}
+.desk-form label>small{font-size:11px;color:var(--text-muted);text-transform:none;letter-spacing:0;line-height:1.5}
+.feed-actions .secondary-button:disabled{opacity:.5;cursor:not-allowed}
+.feed-actions .secondary-button:not(:disabled):hover{border-color:var(--border-strong);color:var(--text-primary)}
