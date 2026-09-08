@@ -29,6 +29,13 @@
       "when": 1788706517511,
       "tag": "0003_funny_beyonder",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1788844763660,
+      "tag": "0004_strange_switch",
+      "breakpoints": true
     }
   ]
 }
