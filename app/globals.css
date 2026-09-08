@@ -87,3 +87,7 @@
 .board-fits{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
 .board-fits button{padding:6px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface-1);font-size:12px;color:var(--text-secondary)}
 .board-fits button.is-active{border-color:var(--accent);color:var(--accent);background:var(--accent-bg)}
+.shell-folds{display:inline-flex;align-items:center;gap:2px;margin-left:10px;padding-left:10px;border-left:1px solid var(--border)}
+.shell-folds button{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:var(--radius-sm);border:1px solid transparent;background:transparent;color:var(--text-muted)}
+.shell-folds button:hover{border-color:var(--border);color:var(--text-secondary)}
+.shell-folds button.is-open{color:var(--accent)}
