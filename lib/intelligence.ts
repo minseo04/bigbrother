@@ -1,10 +1,23 @@
-export type EntityKind = "Person" | "Company" | "Government" | "Technology";
-export type Entity = { id: string; name: string; kind: EntityKind; initials: string; description: string; aliases: string[]; followed: boolean; source: string; color: string; feedUrl?: string; lastCrawled?: string };
+// Free text so the watchlist can hold whatever categories you actually think in.
+// The four below are only the suggestions the picker offers first.
+export type EntityKind = string;
+export const defaultKinds = ["Person", "Company", "Government", "Technology"] as const;
+const kindColors: Record<string,string> = {Person:"#ed997b",Company:"#86a8fc",Government:"#c2acf0",Technology:"#78c7af"};
+const customPalette = ["#e0a3c8","#8fc4d8","#d5b775","#9ec48f","#b9a4d4","#e09a86"];
+// Same name, same colour, on every device and after every reload.
+export function kindColor(kind: string): string {
+  const known = kindColors[kind];
+  if (known) return known;
+  let hash = 0;
+  for (const character of kind.toLowerCase()) hash = (hash * 31 + character.codePointAt(0)!) >>> 0;
+  return customPalette[hash % customPalette.length]!;
+}
+export type Entity = { id: string; name: string; kind: EntityKind; initials: string; description: string; aliases: string[]; followed: boolean; source: string; color: string; image?: string; feedUrl?: string; lastCrawled?: string };
 export type Connection = { id: string; from: string; to: string; label: string; evidence: string; url: string; date: string; status: "Documented" | "Hypothesis"; };
 export type Article = { id: string; title: string; url: string; source: string; summary?: string; published: string; entities: string[]; };
 export type Source = { id: string; name: string; url: string; feed: string; status?: string; count?: number; checked?: string };
 export type Briefing = { date: string; articles: Omit<Article,"summary">[]; sources: Source[]; updated: string; };
-export const kinds: EntityKind[] = ["Person", "Company", "Government", "Technology"];
+export const kinds: EntityKind[] = [...defaultKinds];
 const definitions: [string,string,EntityKind,string,string,string[]][] = [
 ["thiel","Peter Thiel","Person","PT","Investor and entrepreneur.",["Peter Thiel","Thiel"]],
 ["musk","Elon Musk","Person","EM","Entrepreneur.",["Elon Musk","Musk"]],
@@ -22,7 +35,7 @@ const definitions: [string,string,EntityKind,string,string,string[]][] = [
 ["ai","Artificial intelligence","Technology","AI","AI research, systems, and applications.",["artificial intelligence"," AI ","machine learning"]],
 ["agents","AI agents","Technology","Ag","AI systems that perform multistep tasks.",["AI agent","agentic","agents"]],
 ];
-export const initialEntities: Entity[] = definitions.map(([id,name,kind,initials,description,aliases])=>({id,name,kind,initials,description,aliases,followed:true,source:"",color:kind==="Person"?"#ed997b":kind==="Company"?"#86a8fc":kind==="Government"?"#c2acf0":"#78c7af"}));
+export const initialEntities: Entity[] = definitions.map(([id,name,kind,initials,description,aliases])=>({id,name,kind,initials,description,aliases,followed:true,source:"",color:kindColor(kind)}));
 export const initialConnections: Connection[] = [];
 export const initialSources: Source[] = [];
 const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
