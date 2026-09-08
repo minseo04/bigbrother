@@ -9,12 +9,12 @@ export async function persistArticles(owner:string,list:Article[]){const db=data
 
 // A board is a view over the shared entity set, not an owner of entities: the same
 // entity can sit on several boards, and crawling stays per-entity regardless.
-export type BoardRow={id:string;name:string;pattern:string;patternColor:string;surface:string;gap:number;sort:number;image:string;imageFit:string};
+export type BoardRow={id:string;name:string;pattern:string;patternColor:string;surface:string;gap:number;sort:number;image:string;imageFit:string;nodeScale:number};
 export async function ensureBoards(owner:string){const db=database();const existing=await db.prepare("SELECT count(*) AS total FROM boards WHERE owner_id=?").bind(owner).first<{total:number}>();if((existing?.total??0)>0)return;const id=crypto.randomUUID(),now=new Date().toISOString();
 // Carry the single global layout onto the first board so nothing moves on upgrade.
 const row=await db.prepare("SELECT value FROM settings WHERE owner_id=? AND key='layout'").bind(owner).first<{value:string}>();let layout:Record<string,[number,number]>={};try{if(row?.value)layout=JSON.parse(row.value) as Record<string,[number,number]>;}catch{}
 const entities=await db.prepare("SELECT id FROM entities WHERE owner_id=?").bind(owner).all<{id:string}>();
 const placements=entities.results.map((entity,index)=>{const at=layout[entity.id]??[(index%5)*220-440,Math.floor(index/5)*180-180];return db.prepare("INSERT OR IGNORE INTO board_nodes (owner_id,board_id,entity_id,x,y) VALUES (?,?,?,?,?)").bind(owner,id,entity.id,Math.round(at[0]),Math.round(at[1]))});
 await db.batch([db.prepare("INSERT INTO boards (owner_id,id,name,pattern,pattern_color,surface,gap,sort,created) VALUES (?,?,?,?,?,?,?,?,?)").bind(owner,id,"Workspace","dots","#2e3c48","#131d26",22,0,now),...placements]);}
-export async function listBoards(owner:string){await ensureBoards(owner);const db=database();const result=await db.prepare("SELECT id,name,pattern,pattern_color AS patternColor,surface,gap,sort,image,image_fit AS imageFit FROM boards WHERE owner_id=? ORDER BY sort ASC,created ASC").bind(owner).all<BoardRow>();return result.results;}
+export async function listBoards(owner:string){await ensureBoards(owner);const db=database();const result=await db.prepare("SELECT id,name,pattern,pattern_color AS patternColor,surface,gap,sort,image,image_fit AS imageFit,node_scale AS nodeScale FROM boards WHERE owner_id=? ORDER BY sort ASC,created ASC").bind(owner).all<BoardRow>();return result.results;}
 export async function boardLayout(owner:string,boardId:string){const db=database();const result=await db.prepare("SELECT entity_id AS id,x,y FROM board_nodes WHERE owner_id=? AND board_id=?").bind(owner,boardId).all<{id:string;x:number;y:number}>();return Object.fromEntries(result.results.map(row=>[row.id,[row.x,row.y] as [number,number]]));}

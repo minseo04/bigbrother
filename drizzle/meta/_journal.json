@@ -43,6 +43,13 @@
       "when": 1788846441428,
       "tag": "0005_friendly_warbound",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1788847755183,
+      "tag": "0006_sticky_epoch",
+      "breakpoints": true
     }
   ]
 }

@@ -1,0 +1,1 @@
+ALTER TABLE `boards` ADD `node_scale` integer DEFAULT 100 NOT NULL;

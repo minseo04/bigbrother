@@ -3,7 +3,7 @@ import {type RefObject} from "react";
 import {LogOut,Search} from "lucide-react";
 import {useWorkspaceStore,type GraphMode} from "@/lib/workspace-store";
 type Props={query:string;onQuery:(value:string)=>void;searchRef:RefObject<HTMLInputElement|null>};
-const tools:[[GraphMode,string,string],[GraphMode,string,string],[GraphMode,string,string],[GraphMode,string,string]]=[["select","V","Select"],["pan","H","Pan"],["connect","C","Connect"],["new","N","New entity"]];
+const tools:[GraphMode,string,string][]=[["auto","A","Auto"],["select","V","Select"],["pan","H","Pan"],["connect","C","Connect"],["new","N","New entity"]];
 // The sign-out href is plugin middleware, not an app route, so it needs a document
 // request rather than client-side navigation.
 // eslint-disable-next-line next/no-html-link-for-pages
