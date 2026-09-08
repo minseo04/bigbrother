@@ -1,5 +1,5 @@
 import {create} from "zustand";
-export type Board={id:string;name:string;pattern:string;patternColor:string;surface:string;gap:number;sort:number};
+export type Board={id:string;name:string;pattern:string;patternColor:string;surface:string;gap:number;sort:number;image:string;imageFit:string};
 type BoardState={boards:Board[];activeId:string;setBoards:(boards:Board[])=>void;setActive:(id:string)=>void};
 // Kept out of the graph store on purpose: that one is wrapped in zundo, and switching
 // board is navigation rather than an edit — it has no place in the undo stack.

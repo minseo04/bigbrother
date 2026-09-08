@@ -36,6 +36,13 @@
       "when": 1788844763660,
       "tag": "0004_strange_switch",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1788846441428,
+      "tag": "0005_friendly_warbound",
+      "breakpoints": true
     }
   ]
 }

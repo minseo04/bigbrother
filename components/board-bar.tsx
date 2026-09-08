@@ -38,7 +38,7 @@ export function BoardBar({onCreate,onUpdate,onDelete}:Props){
           <label>Surface<input type="color" value={active.surface} onChange={event=>void onUpdate(active.id,{surface:event.target.value})}/></label>
           <label>Pattern colour<input type="color" value={active.patternColor} onChange={event=>void onUpdate(active.id,{patternColor:event.target.value})}/></label>
         </div>
-        <label>Spacing <span className="board-gap-value">{active.gap}px</span><input type="range" min={8} max={80} step={2} value={active.gap} onChange={event=>void onUpdate(active.id,{gap:Number(event.target.value)})}/></label>
+        <label>Background image<input type="url" defaultValue={active.image} placeholder="https://example.com/photo.jpg" onBlur={event=>{const value=event.target.value.trim();if(value!==active.image)void onUpdate(active.id,{image:value})}}/></label>{active.image&&<div className="board-fits">{([["cover","Fill"],["contain","Fit"],["tile","Tile"]] as [string,string][]).map(([value,text])=><button key={value} className={value===active.imageFit?"is-active":""} onClick={()=>void onUpdate(active.id,{imageFit:value})}>{text}</button>)}</div>}<label>Spacing <span className="board-gap-value">{active.gap}px</span><input type="range" min={8} max={80} step={2} value={active.gap} onChange={event=>void onUpdate(active.id,{gap:Number(event.target.value)})}/></label>
         {boards.length>1&&<button className="board-delete text-button" onClick={()=>void onDelete(active.id)}><Trash2 size={13}/> Delete this board</button>}
       </PopoverContent>
     </Popover>}
