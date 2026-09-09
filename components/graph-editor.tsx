@@ -67,13 +67,16 @@ type EntityFlowNode = Node<
   },
   'entity'
 >;
-type HubFlowNode = Node<{ label: string; count: number }, 'hub'>;
+type HubFlowNode = Node<
+  { label: string; count: number; dimension: GroupDimension },
+  'hub'
+>;
 type GraphFlowNode = EntityFlowNode | HubFlowNode;
 type ConnectionFlowEdge = Edge<
   {
     connection?: Connection;
     draft?: boolean;
-    hub?: boolean;
+    group?: GroupDimension;
     onInspect?: () => void;
   },
   'connection'
@@ -172,14 +175,37 @@ function EntityNode({ data, selected }: NodeProps<EntityFlowNode>) {
     </ContextMenu>
   );
 }
-function LocationHubNode({ data }: NodeProps<HubFlowNode>) {
+const groupPresentation: Record<
+  GroupDimension,
+  { title: string; color: string; dash: string }
+> = {
+  vertical: {
+    title: 'BUSINESS AREA',
+    color: 'var(--success)',
+    dash: '2 7',
+  },
+  hq: { title: 'HQ LOCATION', color: 'var(--warning)', dash: '8 6' },
+  layer: {
+    title: 'TECHNOLOGY LAYER',
+    color: 'var(--entity-company)',
+    dash: '10 4 2 4',
+  },
+  stage: {
+    title: 'COMPANY STAGE',
+    color: 'var(--entity-government)',
+    dash: '14 7',
+  },
+};
+
+function GroupHubNode({ data }: NodeProps<HubFlowNode>) {
+  const presentation = groupPresentation[data.dimension];
   return (
     <div
       className="location-hub-node"
-      aria-label={`${data.label} headquarters cluster`}
+      aria-label={`${data.label} ${presentation.title.toLowerCase()} group`}
     >
       <Handle type="source" position={Position.Right} />
-      <span>HQ CLUSTER</span>
+      <span>{presentation.title}</span>
       <strong>{data.label}</strong>
       <small>{data.count} companies</small>
     </div>
@@ -208,7 +234,8 @@ function ConnectionEdge({
       targetPosition,
     }),
     connection = data?.connection,
-    hub = data?.hub;
+    group = data?.group,
+    groupStyle = group ? groupPresentation[group] : null;
   return (
     <>
       <BaseEdge
@@ -219,15 +246,15 @@ function ConnectionEdge({
         interactionWidth={20}
         style={{
           ...style,
-          stroke: hub
-            ? 'var(--accent)'
+          stroke: groupStyle
+            ? groupStyle.color
             : selected
               ? 'var(--accent)'
               : 'var(--border-strong)',
-          strokeOpacity: hub ? 0.34 : 1,
-          strokeWidth: hub ? 1.15 : selected ? 2.5 : 1.5,
-          strokeDasharray: hub
-            ? '2 7'
+          strokeOpacity: groupStyle ? 0.42 : 1,
+          strokeWidth: groupStyle ? 1.2 : selected ? 2.5 : 1.5,
+          strokeDasharray: groupStyle
+            ? groupStyle.dash
             : connection?.status === 'Hypothesis'
               ? '6 5'
               : data?.draft
@@ -278,7 +305,7 @@ function ConnectionEdge({
     </>
   );
 }
-const nodeTypes = { entity: EntityNode, hub: LocationHubNode };
+const nodeTypes = { entity: EntityNode, hub: GroupHubNode };
 const edgeTypes = { connection: ConnectionEdge };
 const TODAY = new Date().toISOString().slice(0, 10);
 function validLayout(value: unknown): GraphLayout {
@@ -436,7 +463,7 @@ function GraphCanvas({
         id: hub.id,
         type: 'hub',
         position: { x: hub.position[0] - 72, y: hub.position[1] - 46 },
-        data: { label: hub.label, count: hub.count },
+        data: { label: hub.label, count: hub.count, dimension: groupBy },
         draggable: false,
         connectable: false,
         selectable: false,
@@ -552,14 +579,14 @@ function GraphCanvas({
         .filter(
           (entity) =>
             positions[entity.id] !== undefined &&
-            groupValue(entity, 'hq') === hub.label,
+            groupValue(entity, groupBy) === hub.label,
         )
         .map((entity) => ({
-          id: `hub-edge:${entity.id}`,
+          id: `group-edge:${groupBy}:${hub.label}:${entity.id}`,
           source: hub.id,
           target: entity.id,
           type: 'connection',
-          data: { hub: true },
+          data: { group: groupBy },
           selectable: false,
           focusable: false,
         })),
@@ -585,6 +612,7 @@ function GraphCanvas({
     clearDraftEdges,
     setEdges,
     groupHubs,
+    groupBy,
     entities,
     positions,
   ]);
@@ -637,7 +665,7 @@ function GraphCanvas({
     );
     if (!boardEntities.length) return;
     const next = groupedLayout(boardEntities, groupBy);
-    setGroupHubs(groupBy === 'hq' ? next.hubs : []);
+    setGroupHubs(next.hubs);
     replacePositions(next.positions);
     persist(next.positions);
     setTimeout(() => void flow.fitView({ padding: 0.12, duration: 500 }), 30);
