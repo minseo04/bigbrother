@@ -41,9 +41,10 @@ import {
   ContextMenuTrigger,
 } from '@/components/ui/context-menu';
 import {
-  groupLayout,
+  groupedLayout,
   groupValue,
   type GraphLayout,
+  type GroupedLayout,
   type GroupDimension,
 } from '@/lib/graph-layout';
 import { TimelineScrubber } from '@/components/graph-timeline';
@@ -66,8 +67,15 @@ type EntityFlowNode = Node<
   },
   'entity'
 >;
+type HubFlowNode = Node<{ label: string; count: number }, 'hub'>;
+type GraphFlowNode = EntityFlowNode | HubFlowNode;
 type ConnectionFlowEdge = Edge<
-  { connection?: Connection; draft?: boolean; onInspect?: () => void },
+  {
+    connection?: Connection;
+    draft?: boolean;
+    hub?: boolean;
+    onInspect?: () => void;
+  },
   'connection'
 >;
 type Props = {
@@ -164,6 +172,19 @@ function EntityNode({ data, selected }: NodeProps<EntityFlowNode>) {
     </ContextMenu>
   );
 }
+function LocationHubNode({ data }: NodeProps<HubFlowNode>) {
+  return (
+    <div
+      className="location-hub-node"
+      aria-label={`${data.label} headquarters cluster`}
+    >
+      <Handle type="source" position={Position.Right} />
+      <span>HQ CLUSTER</span>
+      <strong>{data.label}</strong>
+      <small>{data.count} companies</small>
+    </div>
+  );
+}
 function ConnectionEdge({
   id,
   sourceX,
@@ -186,7 +207,8 @@ function ConnectionEdge({
       sourcePosition,
       targetPosition,
     }),
-    connection = data?.connection;
+    connection = data?.connection,
+    hub = data?.hub;
   return (
     <>
       <BaseEdge
@@ -197,10 +219,16 @@ function ConnectionEdge({
         interactionWidth={20}
         style={{
           ...style,
-          stroke: selected ? 'var(--accent)' : 'var(--border-strong)',
-          strokeWidth: selected ? 2.5 : 1.5,
-          strokeDasharray:
-            connection?.status === 'Hypothesis'
+          stroke: hub
+            ? 'var(--accent)'
+            : selected
+              ? 'var(--accent)'
+              : 'var(--border-strong)',
+          strokeOpacity: hub ? 0.34 : 1,
+          strokeWidth: hub ? 1.15 : selected ? 2.5 : 1.5,
+          strokeDasharray: hub
+            ? '2 7'
+            : connection?.status === 'Hypothesis'
               ? '6 5'
               : data?.draft
                 ? '3 4'
@@ -250,7 +278,7 @@ function ConnectionEdge({
     </>
   );
 }
-const nodeTypes = { entity: EntityNode };
+const nodeTypes = { entity: EntityNode, hub: LocationHubNode };
 const edgeTypes = { connection: ConnectionEdge };
 const TODAY = new Date().toISOString().slice(0, 10);
 function validLayout(value: unknown): GraphLayout {
@@ -294,9 +322,10 @@ function GraphCanvas({
   const [ready, setReady] = useState(false),
     [noteCounts, setNoteCounts] = useState<Record<string, number>>({}),
     [asOf, setAsOf] = useState(TODAY),
-    [groupBy, setGroupBy] = useState<GroupDimension>('vertical');
+    [groupBy, setGroupBy] = useState<GroupDimension>('vertical'),
+    [groupHubs, setGroupHubs] = useState<GroupedLayout['hubs']>([]);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const flow = useReactFlow<EntityFlowNode, ConnectionFlowEdge>();
+  const flow = useReactFlow<GraphFlowNode, ConnectionFlowEdge>();
   const [viewport] = useState<Viewport>(() => {
     try {
       const saved = localStorage.getItem('graph-viewport');
@@ -371,8 +400,8 @@ function GraphCanvas({
     [entities, connections],
   );
   const makeNodes = useCallback(
-    (layout: GraphLayout): EntityFlowNode[] =>
-      entities
+    (layout: GraphLayout): GraphFlowNode[] => {
+      const entityNodes: EntityFlowNode[] = entities
         .filter((entity) => layout[entity.id] !== undefined)
         .map((entity) => ({
           id: entity.id,
@@ -402,7 +431,19 @@ function GraphCanvas({
                 draggable: false,
               }
             : ({} as Partial<EntityFlowNode>)),
-        })),
+        }));
+      const hubNodes: HubFlowNode[] = groupHubs.map((hub) => ({
+        id: hub.id,
+        type: 'hub',
+        position: { x: hub.position[0] - 72, y: hub.position[1] - 46 },
+        data: { label: hub.label, count: hub.count },
+        draggable: false,
+        connectable: false,
+        selectable: false,
+        focusable: false,
+      }));
+      return [...entityNodes, ...hubNodes];
+    },
     [
       entities,
       degree,
@@ -415,6 +456,7 @@ function GraphCanvas({
       onEntity,
       board?.nodeScale,
       groupBy,
+      groupHubs,
     ],
   );
   const initialEdges = useMemo<ConnectionFlowEdge[]>(
@@ -457,7 +499,7 @@ function GraphCanvas({
       onConnection,
     ],
   );
-  const [nodes, setNodes, onNodesChange] = useNodesState<EntityFlowNode>([]);
+  const [nodes, setNodes, onNodesChange] = useNodesState<GraphFlowNode>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<ConnectionFlowEdge>(
     [],
   );
@@ -505,8 +547,26 @@ function GraphCanvas({
         ),
     );
     if (drafts.length !== draftEdges.length) clearDraftEdges();
+    const hubEdges: ConnectionFlowEdge[] = groupHubs.flatMap((hub) =>
+      entities
+        .filter(
+          (entity) =>
+            positions[entity.id] !== undefined &&
+            groupValue(entity, 'hq') === hub.label,
+        )
+        .map((entity) => ({
+          id: `hub-edge:${entity.id}`,
+          source: hub.id,
+          target: entity.id,
+          type: 'connection',
+          data: { hub: true },
+          selectable: false,
+          focusable: false,
+        })),
+    );
     setEdges([
       ...initialEdges,
+      ...hubEdges,
       ...drafts.map(
         (draft) =>
           ({
@@ -518,7 +578,16 @@ function GraphCanvas({
           }) as ConnectionFlowEdge,
       ),
     ]);
-  }, [initialEdges, draftEdges, connections, clearDraftEdges, setEdges]);
+  }, [
+    initialEdges,
+    draftEdges,
+    connections,
+    clearDraftEdges,
+    setEdges,
+    groupHubs,
+    entities,
+    positions,
+  ]);
   useEffect(() => {
     const keyboard = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
@@ -560,12 +629,17 @@ function GraphCanvas({
     [boardId],
   );
   const applyGroupedLayout = useCallback(() => {
-    const boardEntityIds = new Set(Object.keys(useGraphStore.getState().positions));
-    const boardEntities = entities.filter((entity) => boardEntityIds.has(entity.id));
+    const boardEntityIds = new Set(
+      Object.keys(useGraphStore.getState().positions),
+    );
+    const boardEntities = entities.filter((entity) =>
+      boardEntityIds.has(entity.id),
+    );
     if (!boardEntities.length) return;
-    const next = groupLayout(boardEntities, groupBy);
-    replacePositions(next);
-    persist(next);
+    const next = groupedLayout(boardEntities, groupBy);
+    setGroupHubs(groupBy === 'hq' ? next.hubs : []);
+    replacePositions(next.positions);
+    persist(next.positions);
     setTimeout(() => void flow.fitView({ padding: 0.12, duration: 500 }), 30);
   }, [entities, groupBy, replacePositions, persist, flow]);
   const groupCount = useMemo(
@@ -655,12 +729,13 @@ function GraphCanvas({
             Group by
             <select
               value={groupBy}
-              onChange={(event) =>
-                setGroupBy(event.target.value as GroupDimension)
-              }
+              onChange={(event) => {
+                setGroupBy(event.target.value as GroupDimension);
+                setGroupHubs([]);
+              }}
             >
               <option value="vertical">Business area</option>
-              <option value="hq">Headquarters country</option>
+              <option value="hq">Headquarters city</option>
               <option value="layer">Technology layer</option>
               <option value="stage">Company stage</option>
             </select>
@@ -669,7 +744,8 @@ function GraphCanvas({
             Auto-arrange
           </button>
           <span>
-            {groupCount} groups · {nodes.length} nodes
+            {groupCount} groups ·{' '}
+            {nodes.filter((node) => node.type === 'entity').length} companies
           </span>
         </div>
       </div>
@@ -682,6 +758,7 @@ function GraphCanvas({
           onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
           onNodeClick={(_, node) => {
+            if (node.type !== 'entity') return;
             useWorkspaceStore.getState().selectEntity(node.id);
             onEntity(node.data.entity);
           }}
@@ -692,6 +769,7 @@ function GraphCanvas({
             }
           }}
           onNodeDragStop={(_, node) => {
+            if (node.type !== 'entity') return;
             const position: [number, number] = [
               Math.round(node.position.x),
               Math.round(node.position.y),
@@ -751,9 +829,10 @@ function GraphCanvas({
           <MiniMap
             pannable
             zoomable
-            nodeColor={(node) =>
-              (node.data as EntityFlowNode['data']).entity.color
-            }
+            nodeColor={(node) => {
+              if (node.type === 'hub') return 'var(--accent)';
+              return (node.data as EntityFlowNode['data']).entity.color;
+            }}
           />
         </ReactFlow>
       </div>
