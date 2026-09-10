@@ -17,6 +17,8 @@ import {
   X,
 } from 'lucide-react';
 import { SharedMap } from '@/components/shared-map';
+import { DataTable } from '@/components/data-table';
+import { buildTable, type Attribute } from '@/lib/dataframe';
 import { hostOf } from '@/components/graph-hovercard';
 import type { Connection, Entity } from '@/lib/intelligence';
 type Board = {
@@ -36,6 +38,7 @@ type Project = {
   entities: Entity[];
   connections: Connection[];
   noteCounts: Record<string, number>;
+  attributes: Attribute[];
 };
 type View = 'map' | 'table' | 'cards' | 'timeline';
 type Sort = 'name' | 'links' | 'kind' | 'notes';
@@ -135,7 +138,8 @@ export function SharedView({ token }: { token: string }) {
   const update = writePrefs;
   const entities = useMemo(() => project?.entities ?? [], [project]),
     connections = useMemo(() => project?.connections ?? [], [project]),
-    noteCounts = useMemo(() => project?.noteCounts ?? {}, [project]);
+    noteCounts = useMemo(() => project?.noteCounts ?? {}, [project]),
+    attributes = useMemo(() => project?.attributes ?? [], [project]);
   const entityMap = useMemo(
     () => new Map(entities.map((entity) => [entity.id, entity])),
     [entities],
@@ -214,6 +218,10 @@ export function SharedView({ token }: { token: string }) {
         ),
       ) as Record<string, [number, number]>,
     [project?.layout, shownIds],
+  );
+  const table = useMemo(
+    () => buildTable(shownEntities, shownConnections, noteCounts, attributes),
+    [shownEntities, shownConnections, noteCounts, attributes],
   );
   function openEntity(entity: Entity) {
     setSelectedEntity(entity);
@@ -336,7 +344,7 @@ export function SharedView({ token }: { token: string }) {
             </button>
           ))}
         </div>
-        {(prefs.view === 'table' || prefs.view === 'cards') && (
+        {prefs.view === 'cards' && (
           <label className="shared-sort">
             Sort
             <select
@@ -388,48 +396,16 @@ export function SharedView({ token }: { token: string }) {
             />
           )}
           {prefs.view === 'table' && (
-            <div className="shared-scroll">
-              <table className="shared-table">
-                <thead>
-                  <tr>
-                    <th>Name</th>
-                    <th>Category</th>
-                    <th>Links</th>
-                    <th>Notes</th>
-                    <th>Headquarters</th>
-                    <th>Stage</th>
-                    <th>Source</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {shownEntities.map((entity) => (
-                    <tr
-                      key={entity.id}
-                      onClick={() => openEntity(entity)}
-                      className={entity.id === selectedId ? 'is-active' : ''}
-                      tabIndex={0}
-                      onKeyDown={(event) => {
-                        if (event.key === 'Enter') openEntity(entity);
-                      }}
-                    >
-                      <td>
-                        <i style={{ background: entity.color }} />
-                        {entity.name}
-                      </td>
-                      <td>{entity.kind}</td>
-                      <td>{degree[entity.id] ?? 0}</td>
-                      <td>{noteCounts[entity.id] ?? 0}</td>
-                      <td>{entity.profile?.hq ?? '—'}</td>
-                      <td>{entity.profile?.stage ?? '—'}</td>
-                      <td>{hostOf(entity.source) || '—'}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              {!shownEntities.length && (
-                <p className="shared-none">Nothing matches that search.</p>
-              )}
-            </div>
+            <DataTable
+              table={table}
+              connections={shownConnections}
+              positions={project.layout}
+              board={{ id: project.board.id, name: project.title }}
+              selectedId={selectedId}
+              onSelect={openEntity}
+              density={prefs.density}
+              storageKey="shared-table-columns"
+            />
           )}
           {prefs.view === 'cards' && (
             <div className="shared-scroll">

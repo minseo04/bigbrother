@@ -70,11 +70,12 @@ export async function sharedProject(token:string){
   if(!share)return null;
   const board=await db.prepare("SELECT id,name,pattern,pattern_color AS patternColor,surface,gap,sort,image,image_fit AS imageFit,node_scale AS nodeScale FROM boards WHERE owner_id=? AND id=?").bind(share.ownerId,share.boardId).first<BoardRow>();
   if(!board)return null;
-  const[placed,rows,links,counts]=await Promise.all([
+  const[placed,rows,links,counts,attributes]=await Promise.all([
     db.prepare("SELECT entity_id AS id,x,y FROM board_nodes WHERE owner_id=? AND board_id=?").bind(share.ownerId,share.boardId).all<{id:string;x:number;y:number}>(),
     db.prepare("SELECT "+entityColumns+" FROM entities WHERE owner_id=? ORDER BY kind,name").bind(share.ownerId).all(),
     db.prepare("SELECT id,from_id AS 'from',to_id AS 'to',label,evidence,url,date,status FROM connections WHERE owner_id=? ORDER BY rowid").bind(share.ownerId).all(),
-    db.prepare("SELECT target_id AS id,count(*) AS total FROM notes WHERE owner_id=? AND target_kind='entity' GROUP BY target_id").bind(share.ownerId).all<{id:string;total:number}>()
+    db.prepare("SELECT target_id AS id,count(*) AS total FROM notes WHERE owner_id=? AND target_kind='entity' GROUP BY target_id").bind(share.ownerId).all<{id:string;total:number}>(),
+    db.prepare("SELECT entity_id AS entityId,key,value,source_url AS sourceUrl,origin,contributor FROM entity_attributes WHERE owner_id=? ORDER BY entity_id,key").bind(share.ownerId).all<AttributeRow>()
   ]);
   const layout=Object.fromEntries(placed.results.map(row=>[row.id,[row.x,row.y] as [number,number]]));
   const onBoard=new Set(Object.keys(layout));
@@ -82,7 +83,24 @@ export async function sharedProject(token:string){
     title:share.title,created:share.created,views:share.views,board,layout,
     entities:rows.results.map(mapEntity).filter(entity=>onBoard.has(entity.id)),
     connections:(links.results as unknown as Connection[]).filter(connection=>onBoard.has(connection.from)&&onBoard.has(connection.to)),
-    noteCounts:Object.fromEntries(counts.results.filter(row=>onBoard.has(row.id)).map(row=>[row.id,Number(row.total)]))
+    noteCounts:Object.fromEntries(counts.results.filter(row=>onBoard.has(row.id)).map(row=>[row.id,Number(row.total)])),
+    attributes:attributes.results.filter(row=>onBoard.has(row.entityId))
   };
 }
 export async function recordShareView(token:string){const db=database();await db.prepare("UPDATE shares SET views=views+1,last_viewed=? WHERE token=?").bind(new Date().toISOString(),token).run();}
+
+// Attributes are the columns of the table view: anything a workspace wants to record
+// about an entity beyond the seeded market profile. Each value carries the source it
+// came from, the same discipline connections already follow.
+export type AttributeRow={entityId:string;key:string;value:string;sourceUrl:string;origin:string;contributor:string};
+export const attributeLimits={perEntity:40,key:40,value:200};
+export async function listAttributes(owner:string){const db=database();const result=await db.prepare("SELECT entity_id AS entityId,key,value,source_url AS sourceUrl,origin,contributor FROM entity_attributes WHERE owner_id=? ORDER BY entity_id,key").bind(owner).all<AttributeRow>();return result.results;}
+export async function setAttribute(owner:string,entityId:string,key:string,value:string,sourceUrl:string,origin="owner",contributor=""){
+  const db=database();
+  // Keys are matched without case so "HQ" and "hq" stay one column; the first spelling wins.
+  const existing=await db.prepare("SELECT key FROM entity_attributes WHERE owner_id=? AND entity_id=? AND lower(key)=lower(?)").bind(owner,entityId,key).first<{key:string}>();
+  if(!existing){const count=await db.prepare("SELECT count(*) AS total FROM entity_attributes WHERE owner_id=? AND entity_id=?").bind(owner,entityId).first<{total:number}>();if((count?.total??0)>=attributeLimits.perEntity)throw new Error("An entity holds up to "+attributeLimits.perEntity+" attributes. Remove one before adding another.");}
+  await db.prepare("INSERT INTO entity_attributes (owner_id,entity_id,key,value,source_url,origin,contributor,updated) VALUES (?,?,?,?,?,?,?,?) ON CONFLICT(owner_id,entity_id,key) DO UPDATE SET value=excluded.value,source_url=excluded.source_url,origin=excluded.origin,contributor=excluded.contributor,updated=excluded.updated").bind(owner,entityId,existing?.key??key,value,sourceUrl,origin,contributor,new Date().toISOString()).run();
+  return existing?.key??key;
+}
+export async function deleteAttribute(owner:string,entityId:string,key:string){const db=database();const result=await db.prepare("DELETE FROM entity_attributes WHERE owner_id=? AND entity_id=? AND lower(key)=lower(?)").bind(owner,entityId,key).run();return Boolean(result.meta.changes);}
