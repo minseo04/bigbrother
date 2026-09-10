@@ -212,7 +212,7 @@ function groupable(
     return false;
   if (!filled || distinct < 2) return false;
   if (definition.type === 'number') return distinct <= 25;
-  return distinct <= Math.max(3, Math.round(total * 0.8));
+  return distinct <= Math.max(12, Math.round(total * 0.5));
 }
 export function cellText(value: CellValue | undefined): string {
   if (value === undefined || value === '') return '';

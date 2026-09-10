@@ -21,6 +21,16 @@ export type HoverTarget =
       connection: Connection;
       from?: Entity;
       to?: Entity;
+    }
+  | {
+      kind: 'group';
+      x: number;
+      y: number;
+      label: string;
+      dimension: string;
+      count: number;
+      members: string[];
+      primary: boolean;
     };
 export function hostOf(url: string) {
   try {
@@ -111,6 +121,43 @@ function ConnectionBody({
     </>
   );
 }
+function GroupBody({
+  label,
+  dimension,
+  count,
+  members,
+  primary,
+}: {
+  label: string;
+  dimension: string;
+  count: number;
+  members: string[];
+  primary: boolean;
+}) {
+  return (
+    <>
+      <header>
+        <strong>{label}</strong>
+        <span className="hovercard-kind">{dimension}</span>
+      </header>
+      <p>
+        {count === 1 ? '1 entity shares' : count + ' entities share'} this
+        value.{' '}
+        {primary
+          ? 'This grouping placed them on the board.'
+          : 'Lines run to the piles it overlaps with.'}
+      </p>
+      <p className="hovercard-members">
+        {members.slice(0, 8).join(', ')}
+        {members.length > 8 ? ' and ' + (members.length - 8) + ' more' : ''}
+      </p>
+      <footer>
+        <span>Grouping</span>
+        <span>Click to list them</span>
+      </footer>
+    </>
+  );
+}
 export function GraphHoverCard({ target }: { target: HoverTarget | null }) {
   const card = useRef<HTMLDivElement>(null);
   // Measured after the card renders: its own box, and the canvas it must stay inside.
@@ -161,6 +208,14 @@ export function GraphHoverCard({ target }: { target: HoverTarget | null }) {
           entity={target.entity}
           degree={target.degree}
           notes={target.notes}
+        />
+      ) : target.kind === 'group' ? (
+        <GroupBody
+          label={target.label}
+          dimension={target.dimension}
+          count={target.count}
+          members={target.members}
+          primary={target.primary}
         />
       ) : (
         <ConnectionBody

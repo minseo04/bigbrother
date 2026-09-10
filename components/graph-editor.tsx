@@ -33,6 +33,12 @@ import {
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover';
+import { Layers } from 'lucide-react';
+import {
   ContextMenu,
   ContextMenuContent,
   ContextMenuGroup,
@@ -42,11 +48,12 @@ import {
 } from '@/components/ui/context-menu';
 import {
   groupedLayout,
-  groupValue,
   type GraphLayout,
-  type GroupedLayout,
-  type GroupDimension,
+  type GroupBridge,
+  type GroupHub,
+  type GroupRoot,
 } from '@/lib/graph-layout';
+import { groupOf, type Row, type Table } from '@/lib/dataframe';
 import { GraphHoverCard, type HoverTarget } from '@/components/graph-hovercard';
 import { TimelineScrubber } from '@/components/graph-timeline';
 import { timelineIsUseful } from '@/lib/timeline';
@@ -69,22 +76,39 @@ type EntityFlowNode = Node<
   'entity'
 >;
 type HubFlowNode = Node<
-  { label: string; count: number; dimension: GroupDimension },
+  {
+    hub: GroupHub;
+    dimension: string;
+    color: string;
+    onInspect: (hub: GroupHub) => void;
+  },
   'hub'
 >;
-type GraphFlowNode = EntityFlowNode | HubFlowNode;
+type RootFlowNode = Node<{ root: GroupRoot; color: string }, 'root'>;
+type GraphFlowNode = EntityFlowNode | HubFlowNode | RootFlowNode;
 type ConnectionFlowEdge = Edge<
   {
     connection?: Connection;
     draft?: boolean;
-    group?: GroupDimension;
+    group?: 'member' | 'root' | 'bridge';
+    color?: string;
+    dash?: string;
+    shared?: number;
     onInspect?: () => void;
   },
   'connection'
 >;
+export type GroupSelection = {
+  label: string;
+  dimension: string;
+  count: number;
+  members: string[];
+};
 type Props = {
   entities: Entity[];
   connections: Connection[];
+  table: Table;
+  onGroup: (group: GroupSelection | null) => void;
   full?: boolean;
   onEntity: (entity: Entity) => void;
   onConnection: (connection: Connection) => void;
@@ -176,39 +200,47 @@ function EntityNode({ data, selected }: NodeProps<EntityFlowNode>) {
     </ContextMenu>
   );
 }
-const groupPresentation: Record<
-  GroupDimension,
-  { title: string; color: string; dash: string }
-> = {
-  vertical: {
-    title: 'BUSINESS AREA',
-    color: 'var(--success)',
-    dash: '2 7',
-  },
-  hq: { title: 'HQ LOCATION', color: 'var(--warning)', dash: '8 6' },
-  layer: {
-    title: 'TECHNOLOGY LAYER',
-    color: 'var(--entity-company)',
-    dash: '10 4 2 4',
-  },
-  stage: {
-    title: 'COMPANY STAGE',
-    color: 'var(--entity-government)',
-    dash: '14 7',
-  },
-};
-
-function GroupHubNode({ data }: NodeProps<HubFlowNode>) {
-  const presentation = groupPresentation[data.dimension];
+// Dimensions are chosen at runtime, so their colours are assigned in the order the
+// viewer turned them on rather than baked in per field.
+const dimensionPalette = [
+  { color: 'var(--success)', dash: '2 7' },
+  { color: 'var(--warning)', dash: '8 6' },
+  { color: 'var(--entity-company)', dash: '10 4 2 4' },
+  { color: 'var(--entity-government)', dash: '14 7' },
+];
+function GroupHubNode({ data, selected }: NodeProps<HubFlowNode>) {
+  return (
+    <button
+      type="button"
+      className={
+        'location-hub-node' +
+        (data.hub.primary ? '' : ' is-secondary') +
+        (selected ? ' is-selected' : '')
+      }
+      style={{ '--group-color': data.color } as CSSProperties}
+      aria-label={`${data.hub.label}, ${data.hub.count} in ${data.dimension}`}
+      onClick={() => data.onInspect(data.hub)}
+    >
+      <Handle type="target" position={Position.Left} />
+      <span>{data.dimension}</span>
+      <strong>{data.hub.label}</strong>
+      <small>{data.hub.count} entities</small>
+      <Handle type="source" position={Position.Right} />
+    </button>
+  );
+}
+function GroupRootNode({ data }: NodeProps<RootFlowNode>) {
   return (
     <div
-      className="location-hub-node"
-      aria-label={`${data.label} ${presentation.title.toLowerCase()} group`}
+      className="group-root-node"
+      style={{ '--group-color': data.color } as CSSProperties}
+      aria-label={`Grouped by ${data.root.label}`}
     >
+      <Handle type="target" position={Position.Left} />
+      <span>GROUPED BY</span>
+      <strong>{data.root.label}</strong>
+      <small>{data.root.groups} groups</small>
       <Handle type="source" position={Position.Right} />
-      <span>{presentation.title}</span>
-      <strong>{data.label}</strong>
-      <small>{data.count} companies</small>
     </div>
   );
 }
@@ -236,7 +268,9 @@ function ConnectionEdge({
     }),
     connection = data?.connection,
     group = data?.group,
-    groupStyle = group ? groupPresentation[group] : null;
+    groupStyle = group
+      ? { color: data?.color ?? 'var(--border-strong)', dash: data?.dash }
+      : null;
   return (
     <>
       <BaseEdge
@@ -252,8 +286,16 @@ function ConnectionEdge({
             : selected
               ? 'var(--accent)'
               : 'var(--border-strong)',
-          strokeOpacity: groupStyle ? 0.42 : 1,
-          strokeWidth: groupStyle ? 1.2 : selected ? 2.5 : 1.5,
+          strokeOpacity: groupStyle ? (group === 'bridge' ? 0.6 : 0.42) : 1,
+          strokeWidth: groupStyle
+            ? group === 'bridge'
+              ? Math.min(4, 0.8 + (data?.shared ?? 1) * 0.5)
+              : group === 'root'
+                ? 1.6
+                : 1.2
+            : selected
+              ? 2.5
+              : 1.5,
           strokeDasharray: groupStyle
             ? groupStyle.dash
             : connection?.status === 'Hypothesis'
@@ -306,7 +348,11 @@ function ConnectionEdge({
     </>
   );
 }
-const nodeTypes = { entity: EntityNode, hub: GroupHubNode };
+const nodeTypes = {
+  entity: EntityNode,
+  hub: GroupHubNode,
+  root: GroupRootNode,
+};
 const edgeTypes = { connection: ConnectionEdge };
 const TODAY = new Date().toISOString().slice(0, 10);
 function validLayout(value: unknown): GraphLayout {
@@ -325,6 +371,8 @@ function validLayout(value: unknown): GraphLayout {
 function GraphCanvas({
   entities,
   connections,
+  table,
+  onGroup,
   full,
   onEntity,
   onConnection,
@@ -352,8 +400,11 @@ function GraphCanvas({
   const [ready, setReady] = useState(false),
     [noteCounts, setNoteCounts] = useState<Record<string, number>>({}),
     [asOf, setAsOf] = useState(TODAY),
-    [groupBy, setGroupBy] = useState<GroupDimension>('vertical'),
-    [groupHubs, setGroupHubs] = useState<GroupedLayout['hubs']>([]);
+    [groupBy, setGroupBy] = useState('vertical'),
+    [extraKeys, setExtraKeys] = useState<string[]>([]),
+    [groupHubs, setGroupHubs] = useState<GroupHub[]>([]),
+    [groupRoots, setGroupRoots] = useState<GroupRoot[]>([]),
+    [groupBridges, setGroupBridges] = useState<GroupBridge[]>([]);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const flow = useReactFlow<GraphFlowNode, ConnectionFlowEdge>();
   const [viewport] = useState<Viewport>(() => {
@@ -416,6 +467,42 @@ function GraphCanvas({
     () => new Map(entities.map((entity) => [entity.id, entity])),
     [entities],
   );
+  // Any column of the table can group the map, so the picker is built from the data
+  // rather than from a fixed list of market fields.
+  const rowById = useMemo(
+    () => new Map(table.rows.map((row) => [row.id, row] as [string, Row])),
+    [table.rows],
+  );
+  const groupColumns = useMemo(
+    () => table.columns.filter((column) => column.groupable),
+    [table.columns],
+  );
+  const columnLabel = useCallback(
+    (key: string) =>
+      table.columns.find((column) => column.key === key)?.label ?? key,
+    [table.columns],
+  );
+  const valueOf = useCallback(
+    (entity: Entity, key: string) => {
+      const row = rowById.get(entity.id);
+      return row ? groupOf(row, key) : 'Not recorded';
+    },
+    [rowById],
+  );
+  const activeKeys = useMemo(
+    () => [groupBy, ...extraKeys.filter((key) => key !== groupBy)],
+    [groupBy, extraKeys],
+  );
+  const dimensionStyles = useMemo(
+    () =>
+      new Map(
+        activeKeys.map((key, index) => [
+          key,
+          dimensionPalette[index % dimensionPalette.length]!,
+        ]),
+      ),
+    [activeKeys],
+  );
   const degree = useMemo(
     () =>
       Object.fromEntries(
@@ -446,7 +533,7 @@ function GraphCanvas({
             notes: noteCounts[entity.id] ?? 0,
             scale: board?.nodeScale ?? 100,
             dimmed: !atToday && !visibleEntityIds.has(entity.id),
-            groupLabel: groupValue(entity, groupBy),
+            groupLabel: valueOf(entity, groupBy),
             onToggleFollow: toggleFollow,
             onConnectFrom,
             onInspect: onEntity,
@@ -466,13 +553,35 @@ function GraphCanvas({
         id: hub.id,
         type: 'hub',
         position: { x: hub.position[0] - 72, y: hub.position[1] - 46 },
-        data: { label: hub.label, count: hub.count, dimension: groupBy },
+        data: {
+          hub,
+          dimension: columnLabel(hub.key),
+          color: dimensionStyles.get(hub.key)?.color ?? 'var(--accent)',
+          onInspect: (chosen: GroupHub) =>
+            onGroup({
+              label: chosen.label,
+              dimension: columnLabel(chosen.key),
+              count: chosen.count,
+              members: chosen.members,
+            }),
+        },
+        draggable: false,
+        connectable: false,
+      }));
+      const rootNodes: RootFlowNode[] = groupRoots.map((root) => ({
+        id: root.id,
+        type: 'root',
+        position: { x: root.position[0] - 90, y: root.position[1] - 46 },
+        data: {
+          root,
+          color: dimensionStyles.get(root.key)?.color ?? 'var(--accent)',
+        },
         draggable: false,
         connectable: false,
         selectable: false,
         focusable: false,
       }));
-      return [...entityNodes, ...hubNodes];
+      return [...entityNodes, ...hubNodes, ...rootNodes];
     },
     [
       entities,
@@ -487,6 +596,11 @@ function GraphCanvas({
       board?.nodeScale,
       groupBy,
       groupHubs,
+      groupRoots,
+      dimensionStyles,
+      columnLabel,
+      valueOf,
+      onGroup,
     ],
   );
   const initialEdges = useMemo<ConnectionFlowEdge[]>(
@@ -577,26 +691,63 @@ function GraphCanvas({
         ),
     );
     if (drafts.length !== draftEdges.length) clearDraftEdges();
-    const hubEdges: ConnectionFlowEdge[] = groupHubs.flatMap((hub) =>
-      entities
-        .filter(
-          (entity) =>
-            positions[entity.id] !== undefined &&
-            groupValue(entity, groupBy) === hub.label,
-        )
-        .map((entity) => ({
-          id: `group-edge:${groupBy}:${hub.label}:${entity.id}`,
-          source: hub.id,
-          target: entity.id,
-          type: 'connection',
-          data: { group: groupBy },
+    // Only the dimension that placed the nodes draws a line to each of them. The
+    // others would bury the map, so they show their overlap hub to hub instead.
+    const hubEdges: ConnectionFlowEdge[] = groupHubs
+      .filter((hub) => hub.primary)
+      .flatMap((hub) =>
+        hub.members
+          .filter((id) => positions[id] !== undefined)
+          .map((id) => ({
+            id: `group-edge:${hub.id}:${id}`,
+            source: hub.id,
+            target: id,
+            type: 'connection' as const,
+            data: {
+              group: 'member' as const,
+              color: dimensionStyles.get(hub.key)?.color,
+              dash: dimensionStyles.get(hub.key)?.dash,
+            },
+            selectable: false,
+            focusable: false,
+          })),
+      );
+    const rootEdges: ConnectionFlowEdge[] = groupRoots.flatMap((root) =>
+      groupHubs
+        .filter((hub) => hub.key === root.key)
+        .map((hub) => ({
+          id: `root-edge:${root.id}:${hub.id}`,
+          source: root.id,
+          target: hub.id,
+          type: 'connection' as const,
+          data: {
+            group: 'root' as const,
+            color: dimensionStyles.get(root.key)?.color,
+          },
           selectable: false,
           focusable: false,
         })),
     );
+    const bridgeEdges: ConnectionFlowEdge[] = groupBridges.map((bridge) => ({
+      id: bridge.id,
+      source: bridge.source,
+      target: bridge.target,
+      type: 'connection' as const,
+      data: {
+        group: 'bridge' as const,
+        shared: bridge.shared,
+        color: 'var(--graph-glow)',
+        dash: '4 6',
+      },
+      selectable: false,
+      focusable: false,
+      ariaLabel: bridge.shared + ' shared entities',
+    }));
     setEdges([
       ...initialEdges,
       ...hubEdges,
+      ...rootEdges,
+      ...bridgeEdges,
       ...drafts.map(
         (draft) =>
           ({
@@ -615,8 +766,9 @@ function GraphCanvas({
     clearDraftEdges,
     setEdges,
     groupHubs,
-    groupBy,
-    entities,
+    groupRoots,
+    groupBridges,
+    dimensionStyles,
     positions,
   ]);
   useEffect(() => {
@@ -667,21 +819,48 @@ function GraphCanvas({
       boardEntityIds.has(entity.id),
     );
     if (!boardEntities.length) return;
-    const next = groupedLayout(boardEntities, groupBy);
+    const next = groupedLayout(
+      boardEntities,
+      { key: groupBy, label: columnLabel(groupBy) },
+      valueOf,
+      extraKeys
+        .filter((key) => key !== groupBy)
+        .map((key) => ({ key, label: columnLabel(key) })),
+    );
     setGroupHubs(next.hubs);
+    setGroupRoots(next.roots);
+    setGroupBridges(next.bridges);
     replacePositions(next.positions);
     persist(next.positions);
     setTimeout(() => void flow.fitView({ padding: 0.12, duration: 500 }), 30);
-  }, [entities, groupBy, replacePositions, persist, flow]);
+  }, [
+    entities,
+    groupBy,
+    extraKeys,
+    columnLabel,
+    valueOf,
+    replacePositions,
+    persist,
+    flow,
+  ]);
   const groupCount = useMemo(
     () =>
       new Set(
         entities
           .filter((entity) => positions[entity.id] !== undefined)
-          .map((entity) => groupValue(entity, groupBy)),
+          .map((entity) => valueOf(entity, groupBy)),
       ).size,
-    [entities, positions, groupBy],
+    [entities, positions, groupBy, valueOf],
   );
+  // Grouping is a way of looking, not a saved property of the board: clearing it
+  // takes the hubs and the dimension nodes away and leaves the entities where they
+  // were dropped.
+  const clearGrouping = useCallback(() => {
+    setGroupHubs([]);
+    setGroupRoots([]);
+    setGroupBridges([]);
+    onGroup(null);
+  }, [onGroup]);
   useEffect(
     () => () => {
       if (saveTimer.current) clearTimeout(saveTimer.current);
@@ -729,6 +908,20 @@ function GraphCanvas({
   }, []);
   const hoverNode = useCallback(
     (event: { clientX: number; clientY: number }, node: GraphFlowNode) => {
+      if (node.type === 'hub') {
+        const { hub, dimension } = node.data as HubFlowNode['data'];
+        return setHover({
+          kind: 'group',
+          ...pointAt(event),
+          label: hub.label,
+          dimension,
+          count: hub.count,
+          members: hub.members.map(
+            (id) => entityMap.get(id)?.name ?? id,
+          ),
+          primary: hub.primary,
+        });
+      }
       if (node.type !== 'entity') return setHover(null);
       const entity = (node.data as EntityFlowNode['data']).entity;
       setHover({
@@ -739,7 +932,7 @@ function GraphCanvas({
         notes: noteCounts[entity.id] ?? 0,
       });
     },
-    [degree, noteCounts, pointAt],
+    [degree, noteCounts, pointAt, entityMap],
   );
   const hoverEdge = useCallback(
     (event: { clientX: number; clientY: number }, edge: ConnectionFlowEdge) => {
@@ -799,19 +992,69 @@ function GraphCanvas({
             <select
               value={groupBy}
               onChange={(event) => {
-                setGroupBy(event.target.value as GroupDimension);
-                setGroupHubs([]);
+                setGroupBy(event.target.value);
+                clearGrouping();
               }}
             >
-              <option value="vertical">Business area</option>
-              <option value="hq">Headquarters city</option>
-              <option value="layer">Technology layer</option>
-              <option value="stage">Company stage</option>
+              {groupColumns.map((column) => (
+                <option key={column.key} value={column.key}>
+                  {column.label} · {column.distinct} groups
+                </option>
+              ))}
             </select>
           </label>
+          <Popover>
+            <PopoverTrigger className="graph-compare">
+              <Layers size={13} /> Compare
+              {extraKeys.length > 0 && <b>{extraKeys.length}</b>}
+            </PopoverTrigger>
+            <PopoverContent
+              className="data-popover"
+              align="end"
+              sideOffset={8}
+            >
+              <span className="data-popover-title">
+                Show these groupings too
+              </span>
+              <div className="data-column-list">
+                {groupColumns
+                  .filter((column) => column.key !== groupBy)
+                  .map((column) => (
+                    <label key={column.key}>
+                      <input
+                        type="checkbox"
+                        checked={extraKeys.includes(column.key)}
+                        onChange={() =>
+                          setExtraKeys((current) =>
+                            current.includes(column.key)
+                              ? current.filter((key) => key !== column.key)
+                              : [...current, column.key].slice(-3),
+                          )
+                        }
+                      />
+                      <span>{column.label}</span>
+                      <small>{column.distinct} groups</small>
+                    </label>
+                  ))}
+              </div>
+              <p className="data-popover-note">
+                Their piles sit under the map and join the ones they share
+                entities with. Only the group-by dimension moves nodes.
+              </p>
+            </PopoverContent>
+          </Popover>
           <button type="button" onClick={applyGroupedLayout} disabled={!ready}>
             Auto-arrange
           </button>
+          {groupHubs.length > 0 && (
+            <button
+              type="button"
+              className="graph-clear-groups"
+              onClick={clearGrouping}
+            >
+              Clear grouping
+            </button>
+          )}
           <span>
             {groupCount} groups ·{' '}
             {nodes.filter((node) => node.type === 'entity').length} companies
@@ -907,7 +1150,10 @@ function GraphCanvas({
             pannable
             zoomable
             nodeColor={(node) => {
-              if (node.type === 'hub') return 'var(--accent)';
+              if (node.type === 'hub' || node.type === 'root')
+                return (
+                  (node.data as { color?: string }).color ?? 'var(--accent)'
+                );
               return (node.data as EntityFlowNode['data']).entity.color;
             }}
           />
