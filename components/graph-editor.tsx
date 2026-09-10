@@ -47,6 +47,7 @@ import {
   type GroupedLayout,
   type GroupDimension,
 } from '@/lib/graph-layout';
+import { GraphHoverCard, type HoverTarget } from '@/components/graph-hovercard';
 import { TimelineScrubber } from '@/components/graph-timeline';
 import { timelineIsUseful } from '@/lib/timeline';
 import { useGraphStore } from '@/lib/graph-store';
@@ -346,6 +347,8 @@ function GraphCanvas({
     ),
     mode = useWorkspaceStore((state) => state.mode),
     setMode = useWorkspaceStore((state) => state.setMode);
+  const canvas = useRef<HTMLDivElement>(null);
+  const [hover, setHover] = useState<HoverTarget | null>(null);
   const [ready, setReady] = useState(false),
     [noteCounts, setNoteCounts] = useState<Record<string, number>>({}),
     [asOf, setAsOf] = useState(TODAY),
@@ -715,6 +718,44 @@ function GraphCanvas({
     },
     [addDraftEdge, isValidConnection, onConnectPair],
   );
+  // Hover cards follow the cursor inside the canvas, so every position is measured
+  // against the canvas box rather than the page.
+  const pointAt = useCallback((event: { clientX: number; clientY: number }) => {
+    const box = canvas.current?.getBoundingClientRect();
+    return {
+      x: event.clientX - (box?.left ?? 0),
+      y: event.clientY - (box?.top ?? 0),
+    };
+  }, []);
+  const hoverNode = useCallback(
+    (event: { clientX: number; clientY: number }, node: GraphFlowNode) => {
+      if (node.type !== 'entity') return setHover(null);
+      const entity = (node.data as EntityFlowNode['data']).entity;
+      setHover({
+        kind: 'entity',
+        ...pointAt(event),
+        entity,
+        degree: degree[entity.id] ?? 0,
+        notes: noteCounts[entity.id] ?? 0,
+      });
+    },
+    [degree, noteCounts, pointAt],
+  );
+  const hoverEdge = useCallback(
+    (event: { clientX: number; clientY: number }, edge: ConnectionFlowEdge) => {
+      const connection = edge.data?.connection;
+      if (!connection) return setHover(null);
+      setHover({
+        kind: 'connection',
+        ...pointAt(event),
+        connection,
+        from: entityMap.get(connection.from),
+        to: entityMap.get(connection.to),
+      });
+    },
+    [entityMap, pointAt],
+  );
+  const clearHover = useCallback(() => setHover(null), []);
   return (
     <div
       className={
@@ -777,7 +818,7 @@ function GraphCanvas({
           </span>
         </div>
       </div>
-      <div className="flow-canvas" data-ready={ready}>
+      <div className="flow-canvas" data-ready={ready} ref={canvas}>
         <ReactFlow
           nodes={nodes}
           edges={edges}
@@ -796,6 +837,14 @@ function GraphCanvas({
               onConnection(edge.data.connection);
             }
           }}
+          onNodeMouseEnter={hoverNode}
+          onNodeMouseMove={hoverNode}
+          onNodeMouseLeave={clearHover}
+          onEdgeMouseEnter={hoverEdge}
+          onEdgeMouseMove={hoverEdge}
+          onEdgeMouseLeave={clearHover}
+          onNodeDragStart={clearHover}
+          onMoveStart={clearHover}
           onNodeDragStop={(_, node) => {
             if (node.type !== 'entity') return;
             const position: [number, number] = [
@@ -863,6 +912,7 @@ function GraphCanvas({
             }}
           />
         </ReactFlow>
+        <GraphHoverCard target={hover} />
       </div>
       {showTimeline && (
         <TimelineScrubber

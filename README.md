@@ -28,6 +28,23 @@ accumulate over time. This is the half of the workspace that is not automated.
 **Moves through time.** A scrubber filters the network to a chosen date, so you
 can see the graph as your sources described it in 2023 rather than today.
 
+**Explains itself on hover.** Resting on a node or a connection opens a card with
+what it is: category, description, how many links and notes it carries, or — for a
+connection — its evidence, its date, whether it is documented or a hypothesis, and
+the publication the claim came from.
+
+**Shares a board, read-only.** Any board can be published as a link. The token in
+that link is the only credential a visitor needs, no sign-in is asked for, and
+revoking it deletes the row and kills the link. A shared board carries its
+entities, its connections and the source behind each one; your notes stay private
+and only their count travels.
+
+**Lets the reader choose the interface.** A shared board opens on the map its
+author arranged, but the visitor can switch it to a table, a card grid, or a
+timeline of connections by date, and can search it, filter it by category, sort it,
+switch to a light background, and tighten the spacing. Those choices are theirs,
+kept on their own device, and applied to every board they open.
+
 ## Stack
 
 | | |
@@ -82,8 +99,9 @@ npm run db:generate  # drizzle-kit generate
 
 ```
 app/            routes and the page shell
-  api/          workspace, briefing and notes endpoints
-components/     editor shell, graph, inspector, outliner, dock
+  api/          workspace, briefing, notes and share endpoints
+  s/[token]/    the public read-only view of a shared board
+components/     editor shell, graph, inspector, outliner, dock, shared view
   ui/           generated shadcn components
 lib/            feeds, crawling, storage, graph layout, stores
 db/             Drizzle schema
