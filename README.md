@@ -43,8 +43,10 @@ and only their count travels.
 **Holds any attribute you want to record.** Beyond the fields the seed provides,
 an entity takes free key/value attributes — each with the source it came from.
 Those attributes are the columns of a table view of the whole workspace, which
-sorts, picks its columns, and downloads as CSV or JSON for pandas; the graph
-shape, layout and all, comes as an optional second file.
+sorts, picks its columns, and downloads for pandas as two tables — nodes with
+their attributes, connections with their evidence — in CSV or JSON. The board's
+layout comes as an optional third file holding only the shape: node ids, their
+coordinates, and which pairs are joined.
 
 **Groups by whichever column you like.** The map's group-by picker is built from
 the data rather than a fixed list, and it says how many piles each column would

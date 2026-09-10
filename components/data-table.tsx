@@ -12,6 +12,9 @@ import {
 import {
   cellText,
   compareCells,
+  edgeColumns,
+  edgeRecords,
+  recordsToCsv,
   toCsv,
   toGraph,
   toRecords,
@@ -141,24 +144,43 @@ export function DataTable({
       localStorage.setItem(storageKey, JSON.stringify(next));
     } catch {}
   }
+  // Two tables and, if asked for, the shape. Nodes carry their attributes, edges
+  // carry their evidence, and the layout file repeats neither.
   function download() {
     const stem = fileStem(board.name);
-    if (format === 'csv')
-      saveFile(stem + '-nodes.csv', 'text/csv;charset=utf-8', toCsv(sorted, columns));
-    else
+    const edges = edgeRecords(
+      connections,
+      sorted.map((row) => row.entity),
+    );
+    if (format === 'csv') {
+      saveFile(
+        stem + '-nodes.csv',
+        'text/csv;charset=utf-8',
+        toCsv(sorted, columns),
+      );
+      saveFile(
+        stem + '-edges.csv',
+        'text/csv;charset=utf-8',
+        recordsToCsv(edges, edgeColumns),
+      );
+    } else {
       saveFile(
         stem + '-nodes.json',
         'application/json',
         JSON.stringify(toRecords(sorted, columns), null, 2),
       );
+      saveFile(
+        stem + '-edges.json',
+        'application/json',
+        JSON.stringify(edges, null, 2),
+      );
+    }
     if (withGraph)
       saveFile(
         stem + '-graph.json',
         'application/json',
         JSON.stringify(
           toGraph({ rows: sorted, columns }, connections, positions ?? {}, board),
-          null,
-          2,
         ),
       );
   }
@@ -210,9 +232,19 @@ export function DataTable({
               checked={withGraph}
               onChange={(event) => setWithGraph(event.target.checked)}
             />
-            Graph layout too
+            Layout too
           </label>
-          <button type="button" className="data-primary" onClick={download}>
+          <button
+            type="button"
+            className="data-primary"
+            onClick={download}
+            title={
+              'Downloads ' +
+              (withGraph ? 'three files' : 'two files') +
+              ': nodes, edges' +
+              (withGraph ? ', and the layout' : '')
+            }
+          >
             <Download size={14} /> Download
           </button>
         </div>

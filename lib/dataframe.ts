@@ -249,12 +249,54 @@ function csvCell(value: CellValue | undefined) {
   return /[",\n]/.test(text) ? '"' + text.replaceAll('"', '""') + '"' : text;
 }
 // Excel reads UTF-8 only when the file says so, and pandas ignores the mark.
-export function toCsv(rows: Row[], columns: Column[]) {
-  const header = columns.map((column) => csvCell(column.key)).join(',');
-  const body = rows.map((row) =>
-    columns.map((column) => csvCell(row.cells[column.key])).join(','),
+export function recordsToCsv(
+  records: Record<string, CellValue>[],
+  keys: string[],
+) {
+  const header = keys.map((key) => csvCell(key)).join(',');
+  const body = records.map((record) =>
+    keys.map((key) => csvCell(record[key])).join(','),
   );
   return '﻿' + [header, ...body].join('\r\n') + '\r\n';
+}
+export function toCsv(rows: Row[], columns: Column[]) {
+  return recordsToCsv(
+    rows.map((row) => row.cells),
+    columns.map((column) => column.key),
+  );
+}
+// Connections are their own table. They cannot be folded into a row-per-entity file,
+// and burying them in the layout file made that file mostly duplicate.
+export const edgeColumns = [
+  'id',
+  'source',
+  'target',
+  'sourceName',
+  'targetName',
+  'label',
+  'status',
+  'date',
+  'url',
+  'evidence',
+];
+export function edgeRecords(connections: Connection[], entities: Entity[]) {
+  const names = new Map(entities.map((entity) => [entity.id, entity.name]));
+  return connections
+    .filter(
+      (connection) => names.has(connection.from) && names.has(connection.to),
+    )
+    .map((connection) => ({
+      id: connection.id,
+      source: connection.from,
+      target: connection.to,
+      sourceName: names.get(connection.from) ?? connection.from,
+      targetName: names.get(connection.to) ?? connection.to,
+      label: connection.label,
+      status: connection.status,
+      date: connection.date,
+      url: connection.url,
+      evidence: connection.evidence,
+    })) as Record<string, CellValue>[];
 }
 export function toRecords(rows: Row[], columns: Column[]) {
   return rows.map((row) =>
@@ -263,30 +305,15 @@ export function toRecords(rows: Row[], columns: Column[]) {
     ),
   );
 }
+// The shape only: where each node sits and what joins to what. Everything else about
+// a node is a column in the nodes file, and everything else about a connection is a
+// row in the edges file — repeating them here made this file five times its size.
 export type GraphFile = {
   version: number;
   generated: string;
   board: { id: string; name: string };
-  nodes: Array<{
-    id: string;
-    label: string;
-    kind: string;
-    color: string;
-    x: number;
-    y: number;
-    group?: string;
-    attributes: Record<string, CellValue | null>;
-  }>;
-  edges: Array<{
-    id: string;
-    source: string;
-    target: string;
-    label: string;
-    evidence: string;
-    url: string;
-    date: string;
-    status: string;
-  }>;
+  nodes: Array<{ id: string; x: number; y: number; group?: string }>;
+  edges: Array<{ source: string; target: string }>;
 };
 export function toGraph(
   table: Table,
@@ -297,37 +324,22 @@ export function toGraph(
 ): GraphFile {
   const ids = new Set(table.rows.map((row) => row.id));
   return {
-    version: 1,
+    version: 2,
     generated: new Date().toISOString(),
     board,
     nodes: table.rows.map((row) => ({
       id: row.id,
-      label: row.entity.name,
-      kind: row.entity.kind,
-      color: row.entity.color,
       x: positions[row.id]?.[0] ?? 0,
       y: positions[row.id]?.[1] ?? 0,
       ...(groupBy ? { group: groupOf(row, groupBy) } : {}),
-      attributes: Object.fromEntries(
-        table.columns.map((column) => [
-          column.key,
-          row.cells[column.key] ?? null,
-        ]),
-      ),
     })),
     edges: connections
       .filter(
         (connection) => ids.has(connection.from) && ids.has(connection.to),
       )
       .map((connection) => ({
-        id: connection.id,
         source: connection.from,
         target: connection.to,
-        label: connection.label,
-        evidence: connection.evidence,
-        url: connection.url,
-        date: connection.date,
-        status: connection.status,
       })),
   };
 }
