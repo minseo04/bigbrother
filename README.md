@@ -34,10 +34,31 @@ connection — its evidence, its date, whether it is documented or a hypothesis,
 the publication the claim came from.
 
 **Shares a board, read-only.** Any board can be published as a link. The token in
-that link is the only credential a visitor needs, no sign-in is asked for, and
-revoking it deletes the row and kills the link. A shared board carries its
+that link is the only credential a visitor needs to read, revoking it deletes the
+row and kills the link, and a board set to private closes the link without
+deleting it. A shared board carries its
 entities, its connections and the source behind each one; your notes stay private
 and only their count travels.
+
+**Holds any attribute you want to record.** Beyond the fields the seed provides,
+an entity takes free key/value attributes — each with the source it came from.
+Those attributes are the columns of a table view of the whole workspace, which
+sorts, picks its columns, and downloads as CSV or JSON for pandas; the graph
+shape, layout and all, comes as an optional second file.
+
+**Groups by whichever column you like.** The map's group-by picker is built from
+the data rather than a fixed list, and it says how many piles each column would
+make. A grouping draws itself — a node for the dimension, a hub for each value,
+a line from one to the other. Turn on a second dimension and its piles sit under
+the map, joined to the ones they share entities with. Hubs answer to hover and
+open their members, but they exist only while the grouping does.
+
+**Takes suggestions on a public board.** A board can be opened to readers, who
+may propose an attribute, a connection, an entity, or another source for a claim
+— always with a URL behind it. Suggestions wait in four inboxes and change
+nothing until the owner accepts them; accepted ones keep their source and the
+name their author chose to travel under. The owner decides who may send them:
+anyone signed in, people with a public profile, or an invited list.
 
 **Lets the reader choose the interface.** A shared board opens on the map its
 author arranged, but the visitor can switch it to a table, a card grid, or a
@@ -99,11 +120,11 @@ npm run db:generate  # drizzle-kit generate
 
 ```
 app/            routes and the page shell
-  api/          workspace, briefing, notes and share endpoints
+  api/          workspace, briefing, notes, share, contribution and profile endpoints
   s/[token]/    the public read-only view of a shared board
 components/     editor shell, graph, inspector, outliner, dock, shared view
   ui/           generated shadcn components
-lib/            feeds, crawling, storage, graph layout, stores
+lib/            feeds, crawling, storage, graph layout, table, permissions, stores
 db/             Drizzle schema
 drizzle/        generated migrations
 docs/           build plan — one document per step

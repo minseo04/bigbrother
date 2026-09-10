@@ -10,6 +10,7 @@ import {
   Moon,
   Network,
   Rows3,
+  MessageSquarePlus,
   Search,
   Share2,
   Sun,
@@ -18,6 +19,8 @@ import {
 } from 'lucide-react';
 import { SharedMap } from '@/components/shared-map';
 import { DataTable } from '@/components/data-table';
+import { ProfileCard } from '@/components/profile-card';
+import { SuggestDialog, type SuggestMode } from '@/components/suggest-dialog';
 import { buildTable, type Attribute } from '@/lib/dataframe';
 import { hostOf } from '@/components/graph-hovercard';
 import type { Connection, Entity } from '@/lib/intelligence';
@@ -39,6 +42,30 @@ type Project = {
   connections: Connection[];
   noteCounts: Record<string, number>;
   attributes: Attribute[];
+  policy: { visibility: string; proposalAudience: string };
+  proposals: Proposal[];
+  sources: Array<{
+    connectionId: string;
+    url: string;
+    note: string;
+    contributor: string;
+  }>;
+  viewer: {
+    signedIn: boolean;
+    role: string | null;
+    canPropose: boolean;
+    proposeError: string;
+  };
+};
+export type Proposal = {
+  id: string;
+  kind: string;
+  targetId: string;
+  payload: Record<string, unknown>;
+  evidenceUrl: string;
+  message: string;
+  contributorLabel: string;
+  created: string;
 };
 type View = 'map' | 'table' | 'cards' | 'timeline';
 type Sort = 'name' | 'links' | 'kind' | 'notes';
@@ -108,6 +135,48 @@ const views: [View, string, typeof Network][] = [
   ['timeline', 'Timeline', CalendarDays],
 ];
 const ALL = 'All';
+function field(payload: Record<string, unknown>, key: string) {
+  return typeof payload[key] === 'string' ? (payload[key] as string) : '';
+}
+function proposalTitle(proposal: Proposal, entities: Map<string, Entity>) {
+  const name = (id: string) => entities.get(id)?.name ?? id;
+  if (proposal.kind === 'attribute')
+    return name(field(proposal.payload, 'entityId') || proposal.targetId);
+  if (proposal.kind === 'connection')
+    return (
+      name(field(proposal.payload, 'from')) +
+      ' → ' +
+      name(field(proposal.payload, 'to'))
+    );
+  if (proposal.kind === 'entity') return field(proposal.payload, 'name');
+  return 'Another source';
+}
+function proposalDetail(proposal: Proposal, entities: Map<string, Entity>) {
+  if (proposal.kind === 'attribute')
+    return (
+      field(proposal.payload, 'key') + ' — ' + field(proposal.payload, 'value')
+    );
+  if (proposal.kind === 'connection')
+    return (
+      field(proposal.payload, 'label') +
+      ' · ' +
+      field(proposal.payload, 'date') +
+      ' · ' +
+      field(proposal.payload, 'evidence')
+    );
+  if (proposal.kind === 'entity')
+    return (
+      (field(proposal.payload, 'kind') || 'Company') +
+      (field(proposal.payload, 'description')
+        ? ' · ' + field(proposal.payload, 'description')
+        : '')
+    );
+  const connection = entities.get(field(proposal.payload, 'connectionId'));
+  return (
+    field(proposal.payload, 'note') ||
+    'Supports ' + (connection?.name ?? 'a connection on this board')
+  );
+}
 export function SharedView({ token }: { token: string }) {
   const prefs = useSyncExternalStore(subscribePrefs, currentPrefs, serverPrefs);
   const [project, setProject] = useState<Project | null>(null),
@@ -117,7 +186,11 @@ export function SharedView({ token }: { token: string }) {
     [selectedEntity, setSelectedEntity] = useState<Entity | null>(null),
     [selectedConnection, setSelectedConnection] = useState<Connection | null>(
       null,
-    );
+    ),
+    [suggest, setSuggest] = useState<SuggestMode | null>(null),
+    [showProposals, setShowProposals] = useState(false),
+    [sent, setSent] = useState(''),
+    [refreshKey, setRefreshKey] = useState(0);
   useEffect(() => {
     let active = true;
     void fetch('/api/shared?token=' + encodeURIComponent(token))
@@ -134,12 +207,13 @@ export function SharedView({ token }: { token: string }) {
     return () => {
       active = false;
     };
-  }, [token]);
+  }, [token, refreshKey]);
   const update = writePrefs;
   const entities = useMemo(() => project?.entities ?? [], [project]),
     connections = useMemo(() => project?.connections ?? [], [project]),
     noteCounts = useMemo(() => project?.noteCounts ?? {}, [project]),
-    attributes = useMemo(() => project?.attributes ?? [], [project]);
+    attributes = useMemo(() => project?.attributes ?? [], [project]),
+    proposals = useMemo(() => project?.proposals ?? [], [project]);
   const entityMap = useMemo(
     () => new Map(entities.map((entity) => [entity.id, entity])),
     [entities],
@@ -299,6 +373,7 @@ export function SharedView({ token }: { token: string }) {
             </button>
           ))}
         </div>
+        {project.viewer.signedIn && <ProfileCard />}
         <div className="shared-prefs">
           <button
             type="button"
@@ -358,6 +433,31 @@ export function SharedView({ token }: { token: string }) {
             </select>
           </label>
         )}
+        {(proposals.length > 0 || project.viewer.canPropose) && (
+          <button
+            type="button"
+            className={
+              'shared-proposals-toggle' + (showProposals ? ' is-active' : '')
+            }
+            onClick={() => setShowProposals((current) => !current)}
+          >
+            <MessageSquarePlus size={13} /> Suggestions
+            {proposals.length > 0 && <b>{proposals.length}</b>}
+          </button>
+        )}
+        {project.viewer.canPropose && (
+          <div className="shared-suggest-actions">
+            <button
+              type="button"
+              onClick={() => setSuggest({ kind: 'connection' })}
+            >
+              Suggest a connection
+            </button>
+            <button type="button" onClick={() => setSuggest({ kind: 'entity' })}>
+              Suggest an entity
+            </button>
+          </div>
+        )}
         <span className="shared-count">
           {shownEntities.length} of {entities.length} shown
           {filtered && (
@@ -375,7 +475,53 @@ export function SharedView({ token }: { token: string }) {
       </div>
       <div className="shared-body">
         <section className="shared-stage">
-          {prefs.view === 'map' && (
+          {showProposals ? (
+            <div className="shared-scroll">
+              {sent && <p className="shared-sent">{sent}</p>}
+              {!project.viewer.canPropose && project.viewer.proposeError && (
+                <p className="shared-none">{project.viewer.proposeError}</p>
+              )}
+              {!proposals.length && (
+                <p className="shared-none">
+                  No suggestions are waiting on this board.
+                </p>
+              )}
+              <ul className="shared-proposals">
+                {proposals.map((proposal) => (
+                  <li key={proposal.id}>
+                    <span className="shared-proposal-kind">
+                      {proposal.kind}
+                    </span>
+                    <div>
+                      <strong>{proposalTitle(proposal, entityMap)}</strong>
+                      <p>{proposalDetail(proposal, entityMap)}</p>
+                      {proposal.message && (
+                        <p className="shared-proposal-note">
+                          “{proposal.message}”
+                        </p>
+                      )}
+                      <span className="shared-proposal-meta">
+                        {proposal.contributorLabel} ·{' '}
+                        {proposal.created.slice(0, 10)}
+                        {proposal.evidenceUrl && (
+                          <a
+                            href={proposal.evidenceUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                          >
+                            <ArrowUpRight size={12} />
+                            {hostOf(proposal.evidenceUrl)}
+                          </a>
+                        )}
+                      </span>
+                    </div>
+                    <span className="shared-proposal-status">Waiting</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+          {!showProposals && prefs.view === 'map' && (
             <SharedMap
               entities={shownEntities}
               connections={shownConnections}
@@ -395,7 +541,7 @@ export function SharedView({ token }: { token: string }) {
               onConnection={openConnection}
             />
           )}
-          {prefs.view === 'table' && (
+          {!showProposals && prefs.view === 'table' && (
             <DataTable
               table={table}
               connections={shownConnections}
@@ -407,7 +553,7 @@ export function SharedView({ token }: { token: string }) {
               storageKey="shared-table-columns"
             />
           )}
-          {prefs.view === 'cards' && (
+          {!showProposals && prefs.view === 'cards' && (
             <div className="shared-scroll">
               <div className="shared-cards">
                 {shownEntities.map((entity) => (
@@ -447,7 +593,7 @@ export function SharedView({ token }: { token: string }) {
               )}
             </div>
           )}
-          {prefs.view === 'timeline' && (
+          {!showProposals && prefs.view === 'timeline' && (
             <div className="shared-scroll">
               <ol className="shared-timeline">
                 {[...shownConnections]
@@ -549,6 +695,17 @@ export function SharedView({ token }: { token: string }) {
                     <ArrowUpRight size={13} /> {hostOf(selectedEntity.source)}
                   </a>
                 )}
+                {project.viewer.canPropose && (
+                  <button
+                    type="button"
+                    className="shared-suggest"
+                    onClick={() =>
+                      setSuggest({ kind: 'attribute', entity: selectedEntity })
+                    }
+                  >
+                    <MessageSquarePlus size={13} /> Suggest an attribute
+                  </button>
+                )}
                 <h2>Connections ({degree[selectedEntity.id] ?? 0})</h2>
                 <ul className="shared-detail-links">
                   {connections
@@ -625,11 +782,66 @@ export function SharedView({ token }: { token: string }) {
                 >
                   <ArrowUpRight size={13} /> {hostOf(selectedConnection.url)}
                 </a>
+                {project.sources.filter(
+                  (source) => source.connectionId === selectedConnection.id,
+                ).length > 0 && (
+                  <>
+                    <h2>Other accounts</h2>
+                    <ul className="shared-detail-links">
+                      {project.sources
+                        .filter(
+                          (source) =>
+                            source.connectionId === selectedConnection.id,
+                        )
+                        .map((source) => (
+                          <li key={source.url}>
+                            <a
+                              href={source.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                            >
+                              <strong>{hostOf(source.url)}</strong>
+                              <small>{source.note || source.contributor}</small>
+                            </a>
+                          </li>
+                        ))}
+                    </ul>
+                  </>
+                )}
+                {project.viewer.canPropose && (
+                  <button
+                    type="button"
+                    className="shared-suggest"
+                    onClick={() =>
+                      setSuggest({
+                        kind: 'source',
+                        connection: selectedConnection,
+                      })
+                    }
+                  >
+                    <MessageSquarePlus size={13} /> Add a source
+                  </button>
+                )}
               </>
             )}
           </aside>
         )}
       </div>
+      <SuggestDialog
+        token={token}
+        mode={suggest}
+        entities={entities}
+        columns={table.columns
+          .filter((column) => column.source !== 'core')
+          .map((column) => column.label)}
+        onClose={() => setSuggest(null)}
+        onSent={() => {
+          setSuggest(null);
+          setSent('Sent. It waits in the owner’s inbox.');
+          setShowProposals(true);
+          setRefreshKey((current) => current + 1);
+        }}
+      />
       <footer className="shared-footer">
         <Eye size={13} /> You are reading a shared copy. Nothing here changes
         the original, and the notes behind it stay private.

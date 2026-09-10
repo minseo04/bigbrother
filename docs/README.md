@@ -62,6 +62,13 @@ is formatted normally. Follow whichever file you are in rather than reformatting
 query filters on it. There is one user per workspace, but the schema does not assume
 that and neither should new code.
 
+**One door between workspaces.** Everything a person writes stays under their own
+`owner_id`. The single exception is the suggestion layer: a reader of a public board
+writes a row into that board owner's `contributions`, and only the owner accepting it
+moves anything into the workspace proper. Every check that decides who may read,
+edit, or suggest lives in `lib/permissions.ts` — do not spell one out again in a
+handler.
+
 **Errors are user-facing copy.** Existing handlers return sentences, not codes —
 *"Enter a name (2–100 characters), a category, and a public source URL."* Keep that
 register. No stack traces, no "Error:" prefixes.

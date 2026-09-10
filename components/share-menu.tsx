@@ -3,19 +3,28 @@ import {useState} from "react";
 import {Check,Copy,ExternalLink,Link2,Share2,Trash2} from "lucide-react";
 import {Popover,PopoverContent,PopoverTrigger} from "@/components/ui/popover";
 type Share={token:string;boardId:string;title:string;created:string;views:number;lastViewed:string};
+type Access={personId:string;role:string;handle:string|null;displayName:string|null};
+const visibilityChoices:[string,string][]=[["private","Private — the link is closed"],["link","Link — anyone with it can read"],["public","Public — readers can suggest changes"]];
+const audienceChoices:[string,string][]=[["none","Nobody"],["anyone","Anyone signed in"],["profiles","People with a public profile"],["allowlist","Only people I invite"]];
 async function shareApi(body?:unknown){
   const response=await fetch("/api/share",{method:body?"POST":"GET",headers:body?{"Content-Type":"application/json"}:undefined,body:body?JSON.stringify(body):undefined});
   const data=await response.json() as {error?:string;[key:string]:unknown};
   if(!response.ok)throw new Error(data.error??"Unable to complete the request.");
   return data;
 }
-export function ShareMenu({boardId,boardName}:{boardId:string;boardName:string}){
-  const[share,setShare]=useState<Share|null>(null),[loaded,setLoaded]=useState(false),[busy,setBusy]=useState(false),[copied,setCopied]=useState(false),[error,setError]=useState("");
+export function ShareMenu({boardId,boardName,visibility,proposalAudience,onPolicy}:{boardId:string;boardName:string;visibility:string;proposalAudience:string;onPolicy:(change:{visibility?:string;proposalAudience?:string})=>Promise<void>}){
+  const[share,setShare]=useState<Share|null>(null),[loaded,setLoaded]=useState(false),[busy,setBusy]=useState(false),[copied,setCopied]=useState(false),[error,setError]=useState(""),[access,setAccess]=useState<Access[]>([]),[handle,setHandle]=useState(""),[role,setRole]=useState("allowed");
   const url=share?(typeof location==="undefined"?"":location.origin)+"/s/"+share.token:"";
   async function open(next:boolean){
     if(!next)return;
     setError("");setCopied(false);
-    try{const data=await shareApi() as {shares:Share[]};setShare(data.shares.find(item=>item.boardId===boardId)??null);setLoaded(true)}
+    try{
+      const data=await shareApi() as {shares:Share[]};
+      setShare(data.shares.find(item=>item.boardId===boardId)??null);
+      const list=await fetch("/api/workspace?access="+encodeURIComponent(boardId)).then(response=>response.json() as Promise<{access?:Access[]}>).catch(()=>({access:[]}));
+      setAccess(list.access??[]);
+      setLoaded(true);
+    }
     catch(cause){setError(cause instanceof Error?cause.message:"Your share links could not be loaded.");setLoaded(true)}
   }
   async function create(){
@@ -30,6 +39,25 @@ export function ShareMenu({boardId,boardName}:{boardId:string;boardName:string})
     try{await shareApi({action:"revoke",token:share.token});setShare(null);setCopied(false)}
     catch(cause){setError(cause instanceof Error?cause.message:"The link could not be revoked.")}
     finally{setBusy(false)}
+  }
+  async function invite(event:{preventDefault():void}){
+    event.preventDefault();setBusy(true);setError("");
+    try{
+      const response=await fetch("/api/workspace",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"access-add",boardId,handle:handle.trim(),role})});
+      const data=await response.json() as {error?:string};
+      if(!response.ok)throw new Error(data.error??"They could not be added.");
+      setHandle("");
+      const list=await fetch("/api/workspace?access="+encodeURIComponent(boardId)).then(next=>next.json() as Promise<{access?:Access[]}>);
+      setAccess(list.access??[]);
+    }catch(cause){setError(cause instanceof Error?cause.message:"They could not be added.")}
+    finally{setBusy(false)}
+  }
+  async function uninvite(personId:string){
+    setError("");
+    try{
+      await fetch("/api/workspace",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"access-remove",boardId,personId})});
+      setAccess(current=>current.filter(item=>item.personId!==personId));
+    }catch{setError("They could not be removed.")}
   }
   async function copy(){
     try{await navigator.clipboard.writeText(url);setCopied(true);setTimeout(()=>setCopied(false),2500)}
@@ -53,6 +81,35 @@ export function ShareMenu({boardId,boardName}:{boardId:string;boardName:string})
         </div>
         <button className="text-button share-revoke" type="button" disabled={busy} onClick={()=>void revoke()}><Trash2 size={13}/> {busy?"Revoking…":"Revoke this link"}</button>
       </>}
+      <div className="share-policy">
+        <label>Who can open it
+          <select value={visibility} onChange={event=>void onPolicy({visibility:event.target.value})}>
+            {visibilityChoices.map(([value,label])=><option key={value} value={value}>{label}</option>)}
+          </select>
+        </label>
+        {visibility==="public"&&<label>Who can suggest changes
+          <select value={proposalAudience} onChange={event=>void onPolicy({proposalAudience:event.target.value})}>
+            {audienceChoices.map(([value,label])=><option key={value} value={value}>{label}</option>)}
+          </select>
+        </label>}
+        {visibility==="public"&&<>
+          <form className="share-invite" onSubmit={event=>void invite(event)}>
+            <input value={handle} onChange={event=>setHandle(event.target.value)} placeholder="handle" aria-label="Handle to invite"/>
+            <select value={role} onChange={event=>setRole(event.target.value)} aria-label="What they may do">
+              <option value="allowed">May suggest</option>
+              <option value="collaborator">May edit directly</option>
+            </select>
+            <button className="secondary-button" type="submit" disabled={busy||!handle.trim()}>Invite</button>
+          </form>
+          {access.length>0&&<ul className="share-access">
+            {access.map(person=><li key={person.personId}>
+              <span>{person.displayName??person.handle??"Someone"}</span>
+              <small>{person.role==="collaborator"?"edits directly":"suggests"}</small>
+              <button type="button" onClick={()=>void uninvite(person.personId)} aria-label="Remove">×</button>
+            </li>)}
+          </ul>}
+        </>}
+      </div>
       {error&&<p className="form-error" role="alert">{error}</p>}
     </PopoverContent>
   </Popover>;

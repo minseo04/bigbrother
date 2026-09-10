@@ -1,5 +1,5 @@
 import {env} from "cloudflare:workers";
-import {initialEntities,articleKey,type Article,type Entity,type Connection} from "./intelligence";
+import {initialEntities,articleKey,kindColor,type Article,type Entity,type Connection} from "./intelligence";
 import {entitySources,seedConnections} from "./seeds";
 import {aiMarketEntities} from "./ai-market";
 
@@ -38,9 +38,9 @@ export async function getWorkspace(owner:string){
 
 export async function persistArticles(owner:string,list:Article[]){const db=database();const now=new Date().toISOString();const statements:D1PreparedStatement[]=[];for(const a of list){const id=articleKey(a.title,a.source);if(!id)continue;statements.push(db.prepare("INSERT INTO articles (owner_id,id,title,url,source,summary,published,first_seen) VALUES (?,?,?,?,?,?,?,?) ON CONFLICT(owner_id,id) DO UPDATE SET url=excluded.url, summary=CASE WHEN excluded.summary<>'' THEN excluded.summary ELSE articles.summary END").bind(owner,id,a.title,a.url,a.source,a.summary??"",a.published,now));for(const entityId of a.entities){statements.push(db.prepare("INSERT OR IGNORE INTO article_entities (owner_id,article_id,entity_id) VALUES (?,?,?)").bind(owner,id,entityId));}}for(let i=0;i<statements.length;i+=100)await db.batch(statements.slice(i,i+100));}
 
-export type BoardRow={id:string;name:string;pattern:string;patternColor:string;surface:string;gap:number;sort:number;image:string;imageFit:string;nodeScale:number};
+export type BoardRow={id:string;name:string;pattern:string;patternColor:string;surface:string;gap:number;sort:number;image:string;imageFit:string;nodeScale:number;visibility:string;proposalAudience:string};
 export async function ensureBoards(owner:string){const db=database();const existing=await db.prepare("SELECT count(*) AS total FROM boards WHERE owner_id=?").bind(owner).first<{total:number}>();if((existing?.total??0)>0)return;const id=crypto.randomUUID(),now=new Date().toISOString();const row=await db.prepare("SELECT value FROM settings WHERE owner_id=? AND key='layout'").bind(owner).first<{value:string}>();let layout:Record<string,[number,number]>={};try{if(row?.value)layout=JSON.parse(row.value) as Record<string,[number,number]>;}catch{}const entities=await db.prepare("SELECT id FROM entities WHERE owner_id=?").bind(owner).all<{id:string}>();const placements=entities.results.slice(0,100).map((entity,index)=>{const at=layout[entity.id]??[(index%5)*220-440,Math.floor(index/5)*180-180];return db.prepare("INSERT OR IGNORE INTO board_nodes (owner_id,board_id,entity_id,x,y) VALUES (?,?,?,?,?)").bind(owner,id,entity.id,Math.round(at[0]),Math.round(at[1]))});await db.batch([db.prepare("INSERT INTO boards (owner_id,id,name,pattern,pattern_color,surface,gap,sort,created) VALUES (?,?,?,?,?,?,?,?,?)").bind(owner,id,"AI Market Map","dots","#243641","#071018",22,0,now),...placements]);}
-export async function listBoards(owner:string){await ensureBoards(owner);const db=database();const result=await db.prepare("SELECT id,name,pattern,pattern_color AS patternColor,surface,gap,sort,image,image_fit AS imageFit,node_scale AS nodeScale FROM boards WHERE owner_id=? ORDER BY sort ASC,created ASC").bind(owner).all<BoardRow>();return result.results;}
+export async function listBoards(owner:string){await ensureBoards(owner);const db=database();const result=await db.prepare("SELECT id,name,pattern,pattern_color AS patternColor,surface,gap,sort,image,image_fit AS imageFit,node_scale AS nodeScale,visibility,proposal_audience AS proposalAudience FROM boards WHERE owner_id=? ORDER BY sort ASC,created ASC").bind(owner).all<BoardRow>();return result.results;}
 export async function boardLayout(owner:string,boardId:string){const db=database();const result=await db.prepare("SELECT entity_id AS id,x,y FROM board_nodes WHERE owner_id=? AND board_id=?").bind(owner,boardId).all<{id:string;x:number;y:number}>();return Object.fromEntries(result.results.map(row=>[row.id,[row.x,row.y] as [number,number]]));}
 
 // Sharing. A token is the only credential a visitor needs, so it is 128 bits of
@@ -68,14 +68,16 @@ export async function sharedProject(token:string){
   const db=database();
   const share=await db.prepare("SELECT owner_id AS ownerId,board_id AS boardId,title,created,views FROM shares WHERE token=?").bind(token).first<{ownerId:string;boardId:string;title:string;created:string;views:number}>();
   if(!share)return null;
-  const board=await db.prepare("SELECT id,name,pattern,pattern_color AS patternColor,surface,gap,sort,image,image_fit AS imageFit,node_scale AS nodeScale FROM boards WHERE owner_id=? AND id=?").bind(share.ownerId,share.boardId).first<BoardRow>();
+  const board=await db.prepare("SELECT id,name,pattern,pattern_color AS patternColor,surface,gap,sort,image,image_fit AS imageFit,node_scale AS nodeScale,visibility,proposal_audience AS proposalAudience FROM boards WHERE owner_id=? AND id=?").bind(share.ownerId,share.boardId).first<BoardRow&{visibility:string;proposalAudience:string}>();
   if(!board)return null;
-  const[placed,rows,links,counts,attributes]=await Promise.all([
+  const[placed,rows,links,counts,attributes,proposals,sources]=await Promise.all([
     db.prepare("SELECT entity_id AS id,x,y FROM board_nodes WHERE owner_id=? AND board_id=?").bind(share.ownerId,share.boardId).all<{id:string;x:number;y:number}>(),
     db.prepare("SELECT "+entityColumns+" FROM entities WHERE owner_id=? ORDER BY kind,name").bind(share.ownerId).all(),
     db.prepare("SELECT id,from_id AS 'from',to_id AS 'to',label,evidence,url,date,status FROM connections WHERE owner_id=? ORDER BY rowid").bind(share.ownerId).all(),
     db.prepare("SELECT target_id AS id,count(*) AS total FROM notes WHERE owner_id=? AND target_kind='entity' GROUP BY target_id").bind(share.ownerId).all<{id:string;total:number}>(),
-    db.prepare("SELECT entity_id AS entityId,key,value,source_url AS sourceUrl,origin,contributor FROM entity_attributes WHERE owner_id=? ORDER BY entity_id,key").bind(share.ownerId).all<AttributeRow>()
+    db.prepare("SELECT entity_id AS entityId,key,value,source_url AS sourceUrl,origin,contributor FROM entity_attributes WHERE owner_id=? ORDER BY entity_id,key").bind(share.ownerId).all<AttributeRow>(),
+    db.prepare("SELECT id,kind,target_id AS targetId,payload,evidence_url AS evidenceUrl,message,contributor_label AS contributorLabel,created FROM contributions WHERE owner_id=? AND board_id=? AND status='pending' ORDER BY created DESC LIMIT 200").bind(share.ownerId,share.boardId).all<{id:string;kind:string;targetId:string;payload:string;evidenceUrl:string;message:string;contributorLabel:string;created:string}>(),
+    db.prepare("SELECT connection_id AS connectionId,url,note,contributor FROM connection_sources WHERE owner_id=? ORDER BY added").bind(share.ownerId).all<{connectionId:string;url:string;note:string;contributor:string}>()
   ]);
   const layout=Object.fromEntries(placed.results.map(row=>[row.id,[row.x,row.y] as [number,number]]));
   const onBoard=new Set(Object.keys(layout));
@@ -84,9 +86,14 @@ export async function sharedProject(token:string){
     entities:rows.results.map(mapEntity).filter(entity=>onBoard.has(entity.id)),
     connections:(links.results as unknown as Connection[]).filter(connection=>onBoard.has(connection.from)&&onBoard.has(connection.to)),
     noteCounts:Object.fromEntries(counts.results.filter(row=>onBoard.has(row.id)).map(row=>[row.id,Number(row.total)])),
-    attributes:attributes.results.filter(row=>onBoard.has(row.entityId))
+    attributes:attributes.results.filter(row=>onBoard.has(row.entityId)),
+    policy:{visibility:board.visibility,proposalAudience:board.proposalAudience},
+    proposals:proposals.results.map(row=>{let payload:Record<string,unknown>={};try{payload=JSON.parse(row.payload) as Record<string,unknown>}catch{}return{...row,payload}}),
+    sources:sources.results
   };
 }
+// The token names a board without telling its reader who owns it.
+export async function shareTarget(token:string){return database().prepare("SELECT owner_id AS ownerId,board_id AS boardId FROM shares WHERE token=?").bind(token).first<{ownerId:string;boardId:string}>();}
 export async function recordShareView(token:string){const db=database();await db.prepare("UPDATE shares SET views=views+1,last_viewed=? WHERE token=?").bind(new Date().toISOString(),token).run();}
 
 // Attributes are the columns of the table view: anything a workspace wants to record
@@ -104,3 +111,107 @@ export async function setAttribute(owner:string,entityId:string,key:string,value
   return existing?.key??key;
 }
 export async function deleteAttribute(owner:string,entityId:string,key:string){const db=database();const result=await db.prepare("DELETE FROM entity_attributes WHERE owner_id=? AND entity_id=? AND lower(key)=lower(?)").bind(owner,entityId,key).run();return Boolean(result.meta.changes);}
+
+// Profiles exist so a contribution can be attributed and an owner can decide who may
+// send one. A person chooses how much of it is visible; nothing here is required to
+// use the workspace alone.
+export type ProfileRow={handle:string;displayName:string;bio:string;visibility:string};
+export async function getProfile(person:string){return database().prepare("SELECT handle,display_name AS displayName,bio,visibility FROM profiles WHERE owner_id=?").bind(person).first<ProfileRow>();}
+export async function findProfile(handle:string){return database().prepare("SELECT owner_id AS ownerId,handle,display_name AS displayName,visibility FROM profiles WHERE lower(handle)=lower(?)").bind(handle).first<ProfileRow&{ownerId:string}>();}
+export async function saveProfile(person:string,change:{handle:string;displayName:string;bio:string;visibility:string}){
+  const db=database();
+  const taken=await db.prepare("SELECT owner_id AS ownerId FROM profiles WHERE lower(handle)=lower(?) AND owner_id<>?").bind(change.handle,person).first();
+  if(taken)throw new Error("That handle is taken. Choose another.");
+  await db.prepare("INSERT INTO profiles (owner_id,handle,display_name,bio,visibility,created) VALUES (?,?,?,?,?,?) ON CONFLICT(owner_id) DO UPDATE SET handle=excluded.handle,display_name=excluded.display_name,bio=excluded.bio,visibility=excluded.visibility").bind(person,change.handle,change.displayName,change.bio,change.visibility,new Date().toISOString()).run();
+}
+// The label a contribution travels under: a public profile shows its name, a quieter
+// one stays a stable pseudonym rather than leaking the platform identity.
+export async function contributorLabel(person:string){
+  const profile=await getProfile(person);
+  if(profile&&profile.visibility==="public")return profile.displayName||("@"+profile.handle);
+  if(profile&&profile.visibility==="handle_only")return "@"+profile.handle;
+  let hash=0;for(const character of person)hash=(hash*31+character.codePointAt(0)!)>>>0;
+  return "Anonymous "+(hash%9000+1000);
+}
+function text(value:unknown,fallback=""){return typeof value==="string"?value:fallback;}
+export type ContributionRow={id:string;boardId:string;kind:string;targetId:string;payload:string;evidenceUrl:string;message:string;contributor:string;contributorLabel:string;status:string;created:string;decided:string};
+export const contributionKinds=["attribute","connection","entity","source"] as const;
+export async function listContributions(owner:string,boardId:string,status="pending"){
+  const result=await database().prepare("SELECT id,board_id AS boardId,kind,target_id AS targetId,payload,evidence_url AS evidenceUrl,message,contributor,contributor_label AS contributorLabel,status,created,decided FROM contributions WHERE owner_id=? AND board_id=? AND status=? ORDER BY created DESC LIMIT 500").bind(owner,boardId,status).all<ContributionRow>();
+  return result.results;
+}
+export async function createContribution(owner:string,boardId:string,entry:{kind:string;targetId:string;payload:unknown;evidenceUrl:string;message:string;contributor:string;contributorLabel:string}){
+  const db=database();
+  const pending=await db.prepare("SELECT count(*) AS total FROM contributions WHERE owner_id=? AND board_id=? AND status='pending'").bind(owner,boardId).first<{total:number}>();
+  if((pending?.total??0)>=500)throw new Error("This board's inbox is full. Ask its owner to clear it.");
+  const mine=await db.prepare("SELECT count(*) AS total FROM contributions WHERE owner_id=? AND board_id=? AND contributor=? AND status='pending'").bind(owner,boardId,entry.contributor).first<{total:number}>();
+  if((mine?.total??0)>=20)throw new Error("You have 20 suggestions waiting on this board. Give its owner a chance to read them.");
+  const id=crypto.randomUUID();
+  await db.prepare("INSERT INTO contributions (owner_id,id,board_id,kind,target_id,payload,evidence_url,message,contributor,contributor_label,status,created) VALUES (?,?,?,?,?,?,?,?,?,?,'pending',?)").bind(owner,id,boardId,entry.kind,entry.targetId,JSON.stringify(entry.payload),entry.evidenceUrl,entry.message,entry.contributor,entry.contributorLabel,new Date().toISOString()).run();
+  return id;
+}
+// Accepting is the only path from the suggestion layer into the workspace, and it
+// keeps the source and the contributor attached to whatever it writes.
+export async function decideContribution(owner:string,id:string,accept:boolean){
+  const db=database();
+  const row=await db.prepare("SELECT id,board_id AS boardId,kind,target_id AS targetId,payload,evidence_url AS evidenceUrl,contributor,contributor_label AS contributorLabel,status FROM contributions WHERE owner_id=? AND id=?").bind(owner,id).first<ContributionRow>();
+  if(!row)return {ok:false,error:"That suggestion is no longer in the inbox."};
+  if(row.status!=="pending")return {ok:false,error:"That suggestion has already been decided."};
+  const now=new Date().toISOString();
+  if(!accept){await db.prepare("UPDATE contributions SET status='declined',decided=? WHERE owner_id=? AND id=?").bind(now,owner,id).run();return {ok:true};}
+  let payload:Record<string,unknown>={};
+  try{payload=JSON.parse(row.payload) as Record<string,unknown>;}catch{return {ok:false,error:"That suggestion could not be read."};}
+  if(row.kind==="attribute"){
+    const entityId=text(payload.entityId,row.targetId),key=text(payload.key),value=text(payload.value);
+    const exists=await db.prepare("SELECT id FROM entities WHERE owner_id=? AND id=?").bind(owner,entityId).first();
+    if(!exists)return {ok:false,error:"The entity this suggestion described is gone."};
+    await setAttribute(owner,entityId,key,value,row.evidenceUrl,"contribution",row.contributorLabel);
+  }else if(row.kind==="connection"){
+    const from=text(payload.from),to=text(payload.to);
+    const nodes=await db.prepare("SELECT id FROM entities WHERE owner_id=? AND id IN (?,?)").bind(owner,from,to).all();
+    if(nodes.results.length!==2)return {ok:false,error:"Both entities must still exist to accept this."};
+    const connectionId=crypto.randomUUID();
+    await db.batch([
+      db.prepare("INSERT INTO connections (owner_id,id,from_id,to_id,label,evidence,url,date,status) VALUES (?,?,?,?,?,?,?,?,?)").bind(owner,connectionId,from,to,text(payload.label),text(payload.evidence),row.evidenceUrl,text(payload.date),payload.status==="Hypothesis"?"Hypothesis":"Documented"),
+      db.prepare("INSERT OR IGNORE INTO connection_sources (owner_id,connection_id,url,note,contributor,added) VALUES (?,?,?,?,?,?)").bind(owner,connectionId,row.evidenceUrl,"Suggested",row.contributorLabel,now)
+    ]);
+  }else if(row.kind==="entity"){
+    const name=text(payload.name).trim();
+    const clash=await db.prepare("SELECT id FROM entities WHERE owner_id=? AND name_key=?").bind(owner,name.toLowerCase()).first<{id:string}>();
+    const entityId=clash?.id??crypto.randomUUID();
+    if(!clash){
+      const kind=text(payload.kind,"Company").trim()||"Company";
+      const initials=name.split(/\s+/).slice(0,2).map(part=>part[0]).join("").toUpperCase();
+      await db.prepare("INSERT INTO entities (owner_id,id,name,name_key,kind,initials,description,aliases,followed,source,color) VALUES (?,?,?,?,?,?,?,?,?,?,?)").bind(owner,entityId,name,name.toLowerCase(),kind,initials,text(payload.description,"Suggested by a reader of this board."),JSON.stringify([name]),1,row.evidenceUrl,kindColor(kind)).run();
+    }
+    const count=await db.prepare("SELECT count(*) AS total FROM board_nodes WHERE owner_id=? AND board_id=?").bind(owner,row.boardId).first<{total:number}>();
+    const slot=count?.total??0;
+    await db.prepare("INSERT OR IGNORE INTO board_nodes (owner_id,board_id,entity_id,x,y) VALUES (?,?,?,?,?)").bind(owner,row.boardId,entityId,(slot%5)*220-440,Math.floor(slot/5)*180-180).run();
+  }else if(row.kind==="source"){
+    const connectionId=text(payload.connectionId,row.targetId);
+    const exists=await db.prepare("SELECT id FROM connections WHERE owner_id=? AND id=?").bind(owner,connectionId).first();
+    if(!exists)return {ok:false,error:"The connection this suggestion supported is gone."};
+    await db.prepare("INSERT OR IGNORE INTO connection_sources (owner_id,connection_id,url,note,contributor,added) VALUES (?,?,?,?,?,?)").bind(owner,connectionId,row.evidenceUrl,text(payload.note),row.contributorLabel,now).run();
+  }else return {ok:false,error:"That suggestion is of a kind this workspace does not accept."};
+  await db.prepare("UPDATE contributions SET status='accepted',decided=? WHERE owner_id=? AND id=?").bind(now,owner,id).run();
+  return {ok:true};
+}
+export async function listConnectionSources(owner:string){
+  const result=await database().prepare("SELECT connection_id AS connectionId,url,note,contributor,added FROM connection_sources WHERE owner_id=? ORDER BY added").bind(owner).all<{connectionId:string;url:string;note:string;contributor:string;added:string}>();
+  return result.results;
+}
+export async function boardAccessList(owner:string,boardId:string){
+  const result=await database().prepare("SELECT a.person_id AS personId,a.role,p.handle,p.display_name AS displayName FROM board_access a LEFT JOIN profiles p ON p.owner_id=a.person_id WHERE a.owner_id=? AND a.board_id=? ORDER BY a.added").bind(owner,boardId).all<{personId:string;role:string;handle:string|null;displayName:string|null}>();
+  return result.results;
+}
+export async function grantAccess(owner:string,boardId:string,handle:string,role:string){
+  const profile=await findProfile(handle);
+  if(!profile)return {ok:false,error:"No one here uses that handle. Ask them to set one up first."};
+  if(profile.ownerId===owner)return {ok:false,error:"You already own this board."};
+  await database().prepare("INSERT INTO board_access (owner_id,board_id,person_id,role,added) VALUES (?,?,?,?,?) ON CONFLICT(owner_id,board_id,person_id) DO UPDATE SET role=excluded.role").bind(owner,boardId,profile.ownerId,role,new Date().toISOString()).run();
+  return {ok:true};
+}
+export async function revokeAccess(owner:string,boardId:string,personId:string){
+  const result=await database().prepare("DELETE FROM board_access WHERE owner_id=? AND board_id=? AND person_id=?").bind(owner,boardId,personId).run();
+  return Boolean(result.meta.changes);
+}
