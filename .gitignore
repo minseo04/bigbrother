@@ -32,6 +32,9 @@ yarn-error.log*
 # sqlite
 /data/
 
+/.vinext/
+/.wrangler/
+
 # deployment and generated files
 .vercel
 tsconfig.tsbuildinfo
