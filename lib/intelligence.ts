@@ -12,7 +12,8 @@ export function kindColor(kind: string): string {
   for (const character of kind.toLowerCase()) hash = (hash * 31 + character.codePointAt(0)!) >>> 0;
   return customPalette[hash % customPalette.length]!;
 }
-export type Entity = { id: string; name: string; kind: EntityKind; initials: string; description: string; aliases: string[]; followed: boolean; source: string; color: string; image?: string; feedUrl?: string; lastCrawled?: string };
+export type MarketProfile = { layer:string; vertical:string; products:string[]; targetCustomer:string; revenueModel:string; stage:string; hq:string; founded:number; website:string; opportunityScore:number; opportunity:string; startup:boolean; tags:string[]; lastVerified:string };
+export type Entity = { id: string; name: string; kind: EntityKind; initials: string; description: string; aliases: string[]; followed: boolean; source: string; color: string; image?: string; feedUrl?: string; lastCrawled?: string; profile?: MarketProfile };
 export type Connection = { id: string; from: string; to: string; label: string; evidence: string; url: string; date: string; status: "Documented" | "Hypothesis"; };
 export type Article = { id: string; title: string; url: string; source: string; summary?: string; published: string; entities: string[]; };
 export type Source = { id: string; name: string; url: string; feed: string; status?: string; count?: number; checked?: string };

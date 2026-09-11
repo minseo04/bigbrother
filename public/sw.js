@@ -1,4 +1,4 @@
-const CACHE="bigbrother-shell-v2";
+const CACHE="bigbrother-shell-v3";
 const SHELL=["/offline.html","/icon-192.png","/icon-512.png","/favicon.svg"];
 // Cache each asset independently: one missing file must not fail the whole install.
 self.addEventListener("install",event=>{event.waitUntil(caches.open(CACHE).then(cache=>Promise.all(SHELL.map(url=>cache.add(url).catch(()=>{})))));self.skipWaiting();});

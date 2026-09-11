@@ -2,10 +2,12 @@
 import {useState} from "react";
 import {Check,Plus,Settings2,Trash2} from "lucide-react";
 import {Popover,PopoverContent,PopoverTrigger} from "@/components/ui/popover";
+import {ShareMenu} from "@/components/share-menu";
+import {ProposalsInbox} from "@/components/proposals-inbox";
 import {activeBoard,useBoardStore,type Board} from "@/lib/board-store";
 const patterns:[string,string][]=[["dots","Dots"],["lines","Lines"],["cross","Cross"],["none","Plain"]];
-type Props={onCreate:(name:string)=>Promise<void>;onUpdate:(id:string,change:Partial<Board>)=>Promise<void>;onDelete:(id:string)=>Promise<void>};
-export function BoardBar({onCreate,onUpdate,onDelete}:Props){
+type Props={onCreate:(name:string)=>Promise<void>;onUpdate:(id:string,change:Partial<Board>)=>Promise<void>;onDelete:(id:string)=>Promise<void>;names:Record<string,string>;onProposalAccepted:()=>void};
+export function BoardBar({onCreate,onUpdate,onDelete,names,onProposalAccepted}:Props){
   const boards=useBoardStore(state=>state.boards),setActive=useBoardStore(state=>state.setActive),active=useBoardStore(activeBoard);
   const [adding,setAdding]=useState(false),[name,setName]=useState(""),[busy,setBusy]=useState(false),[error,setError]=useState("");
   async function create(event:{preventDefault():void}){
@@ -26,6 +28,8 @@ export function BoardBar({onCreate,onUpdate,onDelete}:Props){
         </form>
       : <button className="board-add" onClick={()=>setAdding(true)} aria-label="New board"><Plus size={14}/> New board</button>}
     {error&&<span className="form-error" role="alert">{error}</span>}
+    {active&&active.visibility!=="private"&&<ProposalsInbox boardId={active.id} boardName={active.name} names={names} onApplied={onProposalAccepted}/>}
+    {active&&<ShareMenu boardId={active.id} boardName={active.name} visibility={active.visibility} proposalAudience={active.proposalAudience} onPolicy={change=>onUpdate(active.id,change)}/>}
     {active&&<Popover>
       <PopoverTrigger className="board-settings" aria-label="Board background"><Settings2 size={14}/> Background</PopoverTrigger>
       <PopoverContent className="board-popover" align="end" sideOffset={8}>

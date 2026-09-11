@@ -189,8 +189,8 @@ table of tens of thousands of rows, and the crawl fills in properly from there.
 ## Verification
 
 ```bash
-curl -s -H "Cookie: __sites_local_auth=1" http://localhost:3000/api/briefing > /dev/null
-curl -s -H "Cookie: __sites_local_auth=1" "http://localhost:3000/api/workspace?articles=palantir&limit=10"
+curl -s -b cookies.txt http://127.0.0.1:3000/api/briefing > /dev/null
+curl -s -b cookies.txt "http://127.0.0.1:3000/api/workspace?articles=palantir&limit=10"
 ```
 
 Passing means:
