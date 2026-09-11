@@ -100,11 +100,11 @@ silently.
 ## Verification
 
 ```bash
-curl -s -H "Cookie: __sites_local_auth=1" -H "Content-Type: application/json" \
+curl -s -b cookies.txt -H "Content-Type: application/json" \
   -d '{"kind":"entity","id":"thiel","body":"Founders Fund and Palantir overlap more than the filings suggest."}' \
-  http://localhost:3000/api/notes
+  http://127.0.0.1:3000/api/notes
 
-curl -s -H "Cookie: __sites_local_auth=1" "http://localhost:3000/api/notes?kind=entity&id=thiel"
+curl -s -b cookies.txt "http://127.0.0.1:3000/api/notes?kind=entity&id=thiel"
 ```
 
 Passing means:

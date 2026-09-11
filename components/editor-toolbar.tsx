@@ -1,7 +1,56 @@
 "use client";
 import {type RefObject} from "react";
-import {Grid3X3,LogOut,Network,Search,Table2} from "lucide-react";
-import {useWorkspaceStore,type GraphMode} from "@/lib/workspace-store";
-type Props={query:string;onQuery:(value:string)=>void;searchRef:RefObject<HTMLInputElement|null>;view:"market"|"network"|"table";onView:(view:"market"|"network"|"table")=>void};
-const tools:[GraphMode,string,string][]=[["auto","A","Auto"],["select","V","Select"],["pan","H","Pan"],["connect","C","Connect"],["new","N","New entity"]];
-export function EditorToolbar({query,onQuery,searchRef,view,onView}:Props){const mode=useWorkspaceStore(state=>state.mode),setMode=useWorkspaceStore(state=>state.setMode);return <><div className="view-switch" aria-label="Workspace view"><button className={view==="market"?"active":""} onClick={()=>onView("market")}><Grid3X3 size={14}/> Market explorer</button><button className={view==="network"?"active":""} onClick={()=>onView("network")}><Network size={14}/> Relationship map</button><button className={view==="table"?"active":""} onClick={()=>onView("table")}><Table2 size={14}/> Table</button></div>{view==="network"&&<div className="shell-tools" aria-label="Graph tools">{tools.map(([tool,key,label])=><button key={tool} className={mode===tool?"active":""} onClick={()=>setMode(tool)} aria-label={label+" tool"} title={label+" ("+key+")"}><kbd>{key}</kbd><span>{label}</span></button>)}</div>}<label className="shell-search"><Search size={15}/><input ref={searchRef} value={query} onChange={event=>onQuery(event.target.value)} placeholder="Search companies, products, customers, or revenue models" aria-label="Search the AI market"/><kbd>⌘K</kbd></label><a className="shell-signout" href="/signout-with-chatgpt" title="Sign out"><LogOut size={14}/><span>Sign out</span></a></>}
+import {Grid3X3, LogOut, Network, Search, Table2} from "lucide-react";
+import {useWorkspaceStore, type GraphMode} from "@/lib/workspace-store";
+import {ImportFile} from "@/components/import-file";
+
+type ImportResult = {
+  boardId: string;
+  name: string;
+  created: number;
+  reused: number;
+  placed: number;
+  connections: number;
+  truncated: number;
+};
+
+type Props = {
+  query: string;
+  onQuery: (value: string) => void;
+  searchRef: RefObject<HTMLInputElement | null>;
+  view: "market" | "network" | "table";
+  onView: (view: "market" | "network" | "table") => void;
+  loaded: boolean;
+  onImported: (result: ImportResult) => Promise<void> | void;
+  onImportError: (message: string) => void;
+};
+
+const tools: [GraphMode, string, string][] = [
+  ["auto", "A", "Auto"],
+  ["select", "V", "Select"],
+  ["pan", "H", "Pan"],
+  ["connect", "C", "Connect"],
+  ["new", "N", "New entity"],
+];
+
+export function EditorToolbar({query, onQuery, searchRef, view, onView, loaded, onImported, onImportError}: Props) {
+  const mode = useWorkspaceStore(state => state.mode);
+  const setMode = useWorkspaceStore(state => state.setMode);
+  return <>
+    <div className="view-switch" aria-label="Workspace view">
+      <button className={view === "market" ? "active" : ""} onClick={() => onView("market")}><Grid3X3 size={14}/> Market explorer</button>
+      <button className={view === "network" ? "active" : ""} onClick={() => onView("network")}><Network size={14}/> Relationship map</button>
+      <button className={view === "table" ? "active" : ""} onClick={() => onView("table")}><Table2 size={14}/> Table</button>
+    </div>
+    {view === "network" && <div className="shell-tools" aria-label="Graph tools">
+      {tools.map(([tool, key, label]) => <button key={tool} className={mode === tool ? "active" : ""} onClick={() => setMode(tool)} aria-label={label + " tool"} title={label + " (" + key + ")"}><kbd>{key}</kbd><span>{label}</span></button>)}
+    </div>}
+    <label className="shell-search">
+      <Search size={15}/>
+      <input ref={searchRef} value={query} onChange={event => onQuery(event.target.value)} placeholder="Search companies, products, customers, or revenue models" aria-label="Search the AI market"/>
+      <kbd>⌘K</kbd>
+    </label>
+    <ImportFile className="shell-import" disabled={!loaded} onImported={onImported} onError={onImportError}/>
+    <a className="shell-signout" href="/api/auth/signout" title="Sign out"><LogOut size={14}/><span>Sign out</span></a>
+  </>;
+}

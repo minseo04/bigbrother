@@ -78,14 +78,8 @@ register. No stack traces, no "Error:" prefixes.
 The dev server runs on port 3000 (`npm run dev`). `.claude/launch.json` has the
 config if you drive it through tooling.
 
-**Signing in.** API routes read a signed `bb_session` cookie. In development the
-sign-in page offers **Continue locally**, which stores identity `local_seedy`.
-No browser is needed:
-
-```bash
-curl -s -c cookies.txt http://localhost:3000/api/auth/local
-curl -s -b cookies.txt http://localhost:3000/api/workspace
-```
+**Signing in.** API routes read a signed `bb_session` cookie issued after Google
+OAuth. Sign in at `/` in the browser, then copy the cookie for API calls.
 
 **Migrations.** `npm run db:generate` writes SQL to `drizzle/`. The app applies
 those files to the local SQLite file (`data/bigbrother.db`) or to Turso on first

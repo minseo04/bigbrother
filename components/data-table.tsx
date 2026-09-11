@@ -4,6 +4,7 @@
 // key and a downloadable field without any code changing.
 import { useMemo, useState } from 'react';
 import { Columns3, Download, Table2 } from 'lucide-react';
+import { ImportFile } from '@/components/import-file';
 import {
   Popover,
   PopoverContent,
@@ -31,6 +32,16 @@ type Props = {
   onSelect?: (entity: Entity) => void;
   density?: 'cosy' | 'compact';
   storageKey?: string;
+  onImported?: (result: {
+    boardId: string;
+    name: string;
+    created: number;
+    reused: number;
+    placed: number;
+    connections: number;
+    truncated: number;
+  }) => Promise<void> | void;
+  onImportError?: (message: string) => void;
 };
 const alwaysOn = ['name', 'kind', 'links'];
 // Attributes someone took the trouble to record are always shown; the seeded profile
@@ -89,6 +100,8 @@ export function DataTable({
   onSelect,
   density = 'cosy',
   storageKey = 'table-columns',
+  onImported,
+  onImportError,
 }: Props) {
   const [stored, setStored] = useState<string[]>(() =>
     readVisible(storageKey, table.columns),
@@ -247,6 +260,13 @@ export function DataTable({
           >
             <Download size={14} /> Download
           </button>
+          {onImported && onImportError && (
+            <ImportFile
+              className="data-primary"
+              onImported={onImported}
+              onError={onImportError}
+            />
+          )}
         </div>
       </div>
       <div className="data-scroll">

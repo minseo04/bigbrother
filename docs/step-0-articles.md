@@ -246,14 +246,11 @@ writes to a different SQLite file and the dev server sees nothing.
 
 ## Verification
 
-Local dev needs a signed-in session: the `oai-authenticated-user-id` header is
-injected by `@openai/sites-vite-plugin`, which strips any client-supplied copy.
-Visit `/signin-with-chatgpt` once to get the `__sites_local_auth=1` cookie; the
-plugin then injects the identity `local_seedy`.
+Local API calls need a `bb_session` cookie from Google sign-in in the browser:
 
 ```bash
-curl -s -H "Cookie: __sites_local_auth=1" http://localhost:3000/api/briefing > /dev/null
-curl -s -H "Cookie: __sites_local_auth=1" "http://localhost:3000/api/workspace?articles=trump&limit=5"
+curl -s -b cookies.txt http://127.0.0.1:3000/api/briefing > /dev/null
+curl -s -b cookies.txt "http://127.0.0.1:3000/api/workspace?articles=trump&limit=5"
 ```
 
 Passing means all of:

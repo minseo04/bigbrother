@@ -3,7 +3,7 @@ import {createHmac, timingSafeEqual} from "node:crypto";
 const COOKIE = "bb_session";
 const MONTH = 30 * 24 * 60 * 60;
 
-export type AuthMethods = {local: boolean; github: boolean; password: boolean};
+export type AuthMethods = {google: boolean; github: boolean; password: boolean};
 
 function secret() {
   const value = process.env.AUTH_SECRET;
@@ -24,15 +24,25 @@ function safeEqual(left: string, right: string) {
 
 function cookie(name: string, value: string, maxAge: number) {
   const secure = process.env.NODE_ENV === "production" ? "; Secure" : "";
-  return `${name}=${value}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${secure}`;
+  const expires = maxAge === 0 ? "; Expires=Thu, 01 Jan 1970 00:00:00 GMT" : "";
+  return `${name}=${value}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${expires}${secure}`;
 }
 
 export function authMethods(): AuthMethods {
   return {
-    local: process.env.NODE_ENV !== "production" || process.env.AUTH_ALLOW_LOCAL === "1",
+    google: Boolean(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET),
     github: Boolean(process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CLIENT_SECRET),
     password: Boolean(process.env.AUTH_PASSWORD),
   };
+}
+
+export function publicOrigin(request: Request) {
+  const configured = process.env.AUTH_PUBLIC_URL?.trim().replace(/\/$/, "");
+  if (configured) return configured;
+  const host = request.headers.get("x-forwarded-host") ?? request.headers.get("host");
+  const proto = request.headers.get("x-forwarded-proto") ?? (process.env.NODE_ENV === "production" ? "https" : "http");
+  if (host) return `${proto}://${host.split(",")[0]!.trim()}`;
+  return new URL(request.url).origin;
 }
 
 export function encodeSession(id: string) {

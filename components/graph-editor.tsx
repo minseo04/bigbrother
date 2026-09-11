@@ -395,6 +395,7 @@ function GraphCanvas({
     ),
     mode = useWorkspaceStore((state) => state.mode),
     setMode = useWorkspaceStore((state) => state.setMode);
+  const fitRequest = useWorkspaceStore((state) => state.fitRequest);
   const canvas = useRef<HTMLDivElement>(null);
   const [hover, setHover] = useState<HoverTarget | null>(null);
   const [ready, setReady] = useState(false),
@@ -650,6 +651,7 @@ function GraphCanvas({
   useEffect(() => {
     let active = true;
     if (!boardId) return;
+    setReady(false);
     void fetch('/api/workspace?layout=' + encodeURIComponent(boardId))
       .then(async (response) => {
         const data = (await response.json()) as {
@@ -676,6 +678,11 @@ function GraphCanvas({
       active = false;
     };
   }, [graphKey, boardId, replacePositions]);
+  useEffect(() => {
+    if (!ready || !fitRequest) return;
+    const timer = setTimeout(() => void flow.fitView({ padding: 0.12, duration: 500 }), 80);
+    return () => clearTimeout(timer);
+  }, [fitRequest, ready, flow]);
   useEffect(() => {
     if (ready) setNodes(makeNodes(positions));
   }, [positions, makeNodes, ready, setNodes]);

@@ -44,7 +44,9 @@ and only their count travels.
 an entity takes free key/value attributes — each with the source it came from.
 Those attributes are the columns of a table view of the whole workspace, which
 sorts, picks its columns, and downloads for pandas as two tables — nodes with
-their attributes, connections with their evidence — in CSV or JSON. The board's
+their attributes, connections with their evidence — in CSV or JSON. Upload a CSV
+or JSON table (one row per entity) and it becomes a new board on the relationship
+map. The board's
 layout comes as an optional third file holding only the shape: node ids, their
 coordinates, and which pairs are joined.
 
@@ -91,13 +93,9 @@ npm install
 npm run dev
 ```
 
-The dev server listens on port 3000. Sign in with **Continue locally** — that sets
-a session cookie and seeds the workspace on first request.
-
-```bash
-curl -s -c cookies.txt http://localhost:3000/api/auth/local
-curl -s -b cookies.txt http://localhost:3000/api/workspace
-```
+The dev server listens on port 3000. Sign in with Google in the browser. That sets
+a session cookie and seeds the workspace on first request. API calls after that
+need the `bb_session` cookie from the browser.
 
 Local data lives in `data/bigbrother.db`. Migrations from `drizzle/` run on first
 use. `npm run db:generate` still writes new SQL from `db/schema.ts`.
@@ -126,7 +124,8 @@ database. [Turso](https://turso.tech) is the drop-in:
 | `AUTH_SECRET` | yes | Signs session cookies. `openssl rand -base64 32` |
 | `TURSO_DATABASE_URL` | yes | `libsql://…` |
 | `TURSO_AUTH_TOKEN` | yes | Turso token |
-| `AUTH_ALLOW_LOCAL` | for a private single-user deploy | Set to `1` to keep the local continue button |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | yes | Google OAuth. Callback: `https://<host>/api/auth/google/callback` |
+| `AUTH_PUBLIC_URL` | recommended | Canonical origin, e.g. `https://bigbrother-blue.vercel.app` |
 | `AUTH_PASSWORD` | optional | Password sign-in; identity is `AUTH_USER_ID` or `owner` |
 | `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET` | optional | GitHub OAuth. Callback: `https://<host>/api/auth/github/callback` |
 

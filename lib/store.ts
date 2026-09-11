@@ -2,6 +2,8 @@ import {database,type SqliteStatement} from "@/db/sqlite";
 import {initialEntities,articleKey,kindColor,type Article,type Entity,type Connection} from "./intelligence";
 import {entitySources,seedConnections} from "./seeds";
 import {aiMarketEntities} from "./ai-market";
+import {importLimits, type ImportPlan} from "./import-file";
+import {seedLayout} from "./graph-layout";
 
 export {database};
 
@@ -214,4 +216,89 @@ export async function grantAccess(owner:string,boardId:string,handle:string,role
 export async function revokeAccess(owner:string,boardId:string,personId:string){
   const result=await database().prepare("DELETE FROM board_access WHERE owner_id=? AND board_id=? AND person_id=?").bind(owner,boardId,personId).run();
   return Boolean(result.meta.changes);
+}
+
+export type ImportResult={
+  boardId:string;
+  name:string;
+  created:number;
+  reused:number;
+  placed:number;
+  connections:number;
+  truncated:number;
+};
+function layoutImported(plan:ImportPlan):Record<string,[number,number]>{
+  const placed=plan.entities.slice(0,importLimits.board);
+  if(placed.length&&placed.every(entity=>entity.x!==undefined&&entity.y!==undefined)){
+    return Object.fromEntries(placed.map(entity=>[entity.id,[entity.x!,entity.y!] as [number,number]]));
+  }
+  if(plan.connections.length){
+    const layout=seedLayout(
+      placed.map(entity=>({id:entity.id,name:entity.name,kind:entity.kind,initials:entity.initials,description:entity.description,aliases:entity.aliases,followed:entity.followed,source:entity.source,color:entity.color})),
+      plan.connections.filter(connection=>placed.some(entity=>entity.id===connection.from)&&placed.some(entity=>entity.id===connection.to)).map((connection,index)=>({id:"import-"+index,from:connection.from,to:connection.to,label:connection.label,evidence:connection.evidence,url:connection.url,date:connection.date,status:connection.status}))
+    );
+    return Object.fromEntries(placed.map((entity,index)=>[entity.id,layout[entity.id]??[(index%5)*220-440,Math.floor(index/5)*180-180] as [number,number]]));
+  }
+  return Object.fromEntries(placed.map((entity,index)=>[entity.id,[(index%5)*220-440,Math.floor(index/5)*180-180] as [number,number]]));
+}
+export async function importDataframe(owner:string,plan:ImportPlan):Promise<ImportResult>{
+  await initialize(owner);
+  await ensureBoards(owner);
+  const db=database();
+  const entityCount=await db.prepare("SELECT count(*) AS total FROM entities WHERE owner_id=?").bind(owner).first<{total:number}>();
+  const boardCount=await db.prepare("SELECT count(*) AS total FROM boards WHERE owner_id=?").bind(owner).first<{total:number}>();
+  if((boardCount?.total??0)>=20)throw new Error("This workspace supports up to 20 boards. Delete one before importing another file.");
+  const names=await db.prepare("SELECT name FROM boards WHERE owner_id=?").bind(owner).all<{name:string}>();
+  const taken=new Set(names.results.map(row=>row.name.toLowerCase()));
+  let boardName=plan.name.slice(0,60);
+  for(let n=2;taken.has(boardName.toLowerCase());n+=1)boardName=(plan.name.slice(0,56)+" "+n).trim().slice(0,60);
+  const existingIds=await db.prepare("SELECT id,name_key AS nameKey FROM entities WHERE owner_id=?").bind(owner).all<{id:string;nameKey:string}>();
+  const byName=new Map(existingIds.results.map(row=>[row.nameKey,row.id]));
+  const usedIds=new Set(existingIds.results.map(row=>row.id));
+  const idMap=new Map<string,string>();
+  const writes:SqliteStatement[]=[];
+  let created=0,reused=0,skipped=0;
+  let remaining=Math.max(0,500-(entityCount?.total??0));
+  for(const entity of plan.entities){
+    const nameKey=entity.name.toLowerCase();
+    const already=byName.get(nameKey);
+    if(already){idMap.set(entity.id,already);reused+=1;continue;}
+    if(!remaining){skipped+=1;continue;}
+    let id=entity.id;
+    if(!id||usedIds.has(id))id=crypto.randomUUID();
+    usedIds.add(id);
+    byName.set(nameKey,id);
+    idMap.set(entity.id,id);
+    remaining-=1;
+    created+=1;
+    writes.push(db.prepare("INSERT INTO entities (owner_id,id,name,name_key,kind,initials,description,aliases,followed,source,color,feed_url,image) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)").bind(owner,id,entity.name,nameKey,entity.kind,entity.initials,entity.description,JSON.stringify(entity.aliases),entity.followed?1:0,entity.source,entity.color,entity.feedUrl,entity.image));
+  }
+  const remapped=plan.entities.map(entity=>{
+    const id=idMap.get(entity.id);
+    return id?{...entity,id}:null;
+  }).filter((entity):entity is typeof plan.entities[number]=>Boolean(entity));
+  if(!remapped.length)throw new Error("This workspace is full (500 entities). Remove some before importing.");
+  for(const entity of remapped){
+    for(const attribute of entity.attributes){
+      writes.push(db.prepare("INSERT INTO entity_attributes (owner_id,entity_id,key,value,source_url,origin,contributor,updated) VALUES (?,?,?,?,?,?,?,?) ON CONFLICT(owner_id,entity_id,key) DO UPDATE SET value=excluded.value,updated=excluded.updated").bind(owner,entity.id,attribute.key,attribute.value,"","owner","",new Date().toISOString()));
+    }
+  }
+  const connections=plan.connections.flatMap(connection=>{
+    const from=idMap.get(connection.from),to=idMap.get(connection.to);
+    if(!from||!to||from===to)return [];
+    return [{...connection,from,to,id:crypto.randomUUID()}];
+  });
+  for(const connection of connections){
+    writes.push(db.prepare("INSERT INTO connections (owner_id,id,from_id,to_id,label,evidence,url,date,status) VALUES (?,?,?,?,?,?,?,?,?)").bind(owner,connection.id,connection.from,connection.to,connection.label,connection.evidence,connection.url,connection.date,connection.status));
+  }
+  for(let i=0;i<writes.length;i+=80)await db.batch(writes.slice(i,i+80));
+  const layout=layoutImported({...plan,entities:remapped,connections:connections.map(({id:_id,...rest})=>rest)});
+  const placed=Object.entries(layout).slice(0,importLimits.board);
+  const boardId=crypto.randomUUID();
+  const now=new Date().toISOString();
+  await db.batch([
+    db.prepare("INSERT INTO boards (owner_id,id,name,pattern,pattern_color,surface,gap,sort,created) VALUES (?,?,?,?,?,?,?,?,?)").bind(owner,boardId,boardName,"dots","#243641","#071018",22,boardCount?.total??0,now),
+    ...placed.map(([entityId,at])=>db.prepare("INSERT OR IGNORE INTO board_nodes (owner_id,board_id,entity_id,x,y) VALUES (?,?,?,?,?)").bind(owner,boardId,entityId,at[0],at[1])),
+  ]);
+  return {boardId,name:boardName,created,reused,placed:placed.length,connections:connections.length,truncated:plan.truncated+skipped};
 }
