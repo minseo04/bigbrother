@@ -52,7 +52,7 @@ existing one. Every step below is written so that a half-finished attempt leaves
 app working.
 
 **No new runtime dependencies** except where a step names one explicitly (step 3 adds
-four). The project is deliberately small: vinext, React, Drizzle, shadcn, Cloudflare.
+four). The project is deliberately small: Next.js, React, Drizzle, shadcn, Vercel.
 
 **Match the surrounding style.** `lib/` and `app/api/` are written in a dense,
 single-line style with minimal whitespace. `components/ui/` is generated shadcn and
@@ -78,42 +78,18 @@ register. No stack traces, no "Error:" prefixes.
 The dev server runs on port 3000 (`npm run dev`). `.claude/launch.json` has the
 config if you drive it through tooling.
 
-**Signing in.** API routes require the `oai-authenticated-user-id` header, which
-`@openai/sites-vite-plugin` injects — and it strips any client-supplied copy, so
-setting that header yourself does nothing. Sign in through the plugin's local route
-instead; no browser is needed:
+**Signing in.** API routes read a signed `bb_session` cookie. In development the
+sign-in page offers **Continue locally**, which stores identity `local_seedy`.
+No browser is needed:
 
 ```bash
-curl -s -c cookies.txt http://localhost:3000/signin-with-chatgpt
+curl -s -c cookies.txt http://localhost:3000/api/auth/local
 curl -s -b cookies.txt http://localhost:3000/api/workspace
 ```
 
-`/signin-with-chatgpt` sets `__sites_local_auth=1`, after which the plugin supplies
-the identity `local_seedy` on every request. The route only answers for localhost
-origins, so this works in development and nowhere else. `-H "Cookie: __sites_local_auth=1"`
-is equivalent if you would rather not keep a jar.
-
-**Migrations.** `npm run db:generate` writes SQL to `drizzle/`. Applying it to the
-local D1 needs a standalone wrangler config, because the binding is declared inline
-in `vite.config.ts` and there is no `wrangler.toml`:
-
-```json
-{
-  "name": "site-creator-d1-migrate",
-  "compatibility_date": "2025-01-01",
-  "compatibility_flags": ["nodejs_compat"],
-  "d1_databases": [
-    { "binding": "DB", "database_name": "site-creator-d1", "database_id": "00000000-0000-4000-8000-000000000000" }
-  ]
-}
-```
-
-```bash
-npx wrangler d1 execute DB --local --config <that-file> --persist-to .wrangler/state --file drizzle/<n>_<name>.sql -y
-```
-
-`database_name` and `database_id` must match `vite.config.ts` exactly, or wrangler
-writes to a different SQLite file and the dev server never sees the tables.
+**Migrations.** `npm run db:generate` writes SQL to `drizzle/`. The app applies
+those files to the local SQLite file (`data/bigbrother.db`) or to Turso on first
+request. There is no wrangler step.
 
 **Checks.** `npx tsc --noEmit` must stay clean. `npx oxlint` currently reports 43
 pre-existing errors in generated code (`app/page.tsx` and `components/ui/*`); do not
@@ -121,9 +97,8 @@ add to that count, and do not detour into fixing it.
 
 ## Platform limits that shape the design
 
-- **Subrequests.** A Cloudflare Worker may make 50 outbound `fetch` calls per request
-  on the free plan, 1000 on paid. Step 1 is designed around this.
+- **Function duration.** Vercel Hobby caps serverless work at a short window;
+  the briefing route sets `maxDuration` to 60 seconds so a refresh can finish.
+  Step 1 still batches entity crawls so one request does not fan out without bound.
 - **Request body.** `app/api/workspace/route.ts` caps POST bodies at 6 KB. Layout and
   note payloads must fit, or need their own endpoint.
-- **No scheduled handler.** `vinext/server/fetch-handler` exports only `fetch`.
-  Cron Triggers require wrapping it in a custom worker entry — see step 1.

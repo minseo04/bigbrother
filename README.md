@@ -72,11 +72,11 @@ kept on their own device, and applied to every board they open.
 
 | | |
 |---|---|
-| Framework | [vinext](https://www.npmjs.com/package/vinext) — the Next.js App Router API on Vite and React Server Components |
+| Framework | [Next.js](https://nextjs.org) 15 App Router |
 | UI | React 19, shadcn on `@base-ui/react`, Tailwind 4 |
 | Graph | [React Flow](https://reactflow.dev) with `d3-force` for the initial layout |
-| Runtime | Cloudflare Workers |
-| Storage | Cloudflare D1, schema defined with Drizzle |
+| Runtime | Vercel (Node.js) |
+| Storage | SQLite via [Turso](https://turso.tech) / libSQL locally as `data/bigbrother.db` |
 | Tooling | oxlint, oxfmt, TypeScript 5.9 |
 
 Desktop only. The interface is a docked editor shell and does not attempt to work
@@ -91,32 +91,47 @@ npm install
 npm run dev
 ```
 
-The dev server listens on port 3000. First start takes about a minute while Vite
-optimizes dependencies.
-
-**Signing in.** API routes need an authenticated identity, which
-`@openai/sites-vite-plugin` injects and which cannot be faked with a header — the
-plugin strips client-supplied copies. Visit `/signin-with-chatgpt` once, in the
-browser or with curl:
+The dev server listens on port 3000. Sign in with **Continue locally** — that sets
+a session cookie and seeds the workspace on first request.
 
 ```bash
-curl -s -c cookies.txt http://localhost:3000/signin-with-chatgpt
+curl -s -c cookies.txt http://localhost:3000/api/auth/local
 curl -s -b cookies.txt http://localhost:3000/api/workspace
 ```
 
-**Database.** The D1 binding is declared inline in `vite.config.ts`, so there is no
-`wrangler.toml` for `wrangler d1` to read. Applying a migration locally needs a
-standalone config — see [docs/README.md](docs/README.md) for the exact file and
-command. The workspace seeds itself on first authenticated request.
+Local data lives in `data/bigbrother.db`. Migrations from `drizzle/` run on first
+use. `npm run db:generate` still writes new SQL from `db/schema.ts`.
 
 Other scripts:
 
 ```bash
 npm run build        # production build
+npm run start        # serve the production build
 npm run lint         # oxlint
 npm run format       # oxfmt
 npm run db:generate  # drizzle-kit generate
 ```
+
+## Deploying on Vercel
+
+The filesystem on Vercel is ephemeral, so production needs a hosted SQLite
+database. [Turso](https://turso.tech) is the drop-in:
+
+1. Create a database and copy the URL and token.
+2. Import the GitHub repo into Vercel.
+3. Set environment variables:
+
+| Variable | Required | Purpose |
+|---|---|---|
+| `AUTH_SECRET` | yes | Signs session cookies. `openssl rand -base64 32` |
+| `TURSO_DATABASE_URL` | yes | `libsql://…` |
+| `TURSO_AUTH_TOKEN` | yes | Turso token |
+| `AUTH_ALLOW_LOCAL` | for a private single-user deploy | Set to `1` to keep the local continue button |
+| `AUTH_PASSWORD` | optional | Password sign-in; identity is `AUTH_USER_ID` or `owner` |
+| `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET` | optional | GitHub OAuth. Callback: `https://<host>/api/auth/github/callback` |
+
+Copy `.env.example` for the full list. Shared boards stay public via their token
+and do not need a session.
 
 ## Layout
 

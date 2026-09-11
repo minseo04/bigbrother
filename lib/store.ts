@@ -1,9 +1,9 @@
-import {env} from "cloudflare:workers";
+import {database,type SqliteStatement} from "@/db/sqlite";
 import {initialEntities,articleKey,kindColor,type Article,type Entity,type Connection} from "./intelligence";
 import {entitySources,seedConnections} from "./seeds";
 import {aiMarketEntities} from "./ai-market";
 
-export function database(){if(!env.DB)throw new Error("Workspace storage is unavailable.");return env.DB;}
+export {database};
 
 export async function initialize(owner:string){
   if(!owner)throw new Error("Authentication required.");
@@ -36,7 +36,7 @@ export async function getWorkspace(owner:string){
   return {entities:e.results.map(mapEntity),connections:c.results as Connection[]};
 }
 
-export async function persistArticles(owner:string,list:Article[]){const db=database();const now=new Date().toISOString();const statements:D1PreparedStatement[]=[];for(const a of list){const id=articleKey(a.title,a.source);if(!id)continue;statements.push(db.prepare("INSERT INTO articles (owner_id,id,title,url,source,summary,published,first_seen) VALUES (?,?,?,?,?,?,?,?) ON CONFLICT(owner_id,id) DO UPDATE SET url=excluded.url, summary=CASE WHEN excluded.summary<>'' THEN excluded.summary ELSE articles.summary END").bind(owner,id,a.title,a.url,a.source,a.summary??"",a.published,now));for(const entityId of a.entities){statements.push(db.prepare("INSERT OR IGNORE INTO article_entities (owner_id,article_id,entity_id) VALUES (?,?,?)").bind(owner,id,entityId));}}for(let i=0;i<statements.length;i+=100)await db.batch(statements.slice(i,i+100));}
+export async function persistArticles(owner:string,list:Article[]){const db=database();const now=new Date().toISOString();const statements:SqliteStatement[]=[];for(const a of list){const id=articleKey(a.title,a.source);if(!id)continue;statements.push(db.prepare("INSERT INTO articles (owner_id,id,title,url,source,summary,published,first_seen) VALUES (?,?,?,?,?,?,?,?) ON CONFLICT(owner_id,id) DO UPDATE SET url=excluded.url, summary=CASE WHEN excluded.summary<>'' THEN excluded.summary ELSE articles.summary END").bind(owner,id,a.title,a.url,a.source,a.summary??"",a.published,now));for(const entityId of a.entities){statements.push(db.prepare("INSERT OR IGNORE INTO article_entities (owner_id,article_id,entity_id) VALUES (?,?,?)").bind(owner,id,entityId));}}for(let i=0;i<statements.length;i+=100)await db.batch(statements.slice(i,i+100));}
 
 export type BoardRow={id:string;name:string;pattern:string;patternColor:string;surface:string;gap:number;sort:number;image:string;imageFit:string;nodeScale:number;visibility:string;proposalAudience:string};
 export async function ensureBoards(owner:string){const db=database();const existing=await db.prepare("SELECT count(*) AS total FROM boards WHERE owner_id=?").bind(owner).first<{total:number}>();if((existing?.total??0)>0)return;const id=crypto.randomUUID(),now=new Date().toISOString();const row=await db.prepare("SELECT value FROM settings WHERE owner_id=? AND key='layout'").bind(owner).first<{value:string}>();let layout:Record<string,[number,number]>={};try{if(row?.value)layout=JSON.parse(row.value) as Record<string,[number,number]>;}catch{}const entities=await db.prepare("SELECT id FROM entities WHERE owner_id=?").bind(owner).all<{id:string}>();const placements=entities.results.slice(0,100).map((entity,index)=>{const at=layout[entity.id]??[(index%5)*220-440,Math.floor(index/5)*180-180];return db.prepare("INSERT OR IGNORE INTO board_nodes (owner_id,board_id,entity_id,x,y) VALUES (?,?,?,?,?)").bind(owner,id,entity.id,Math.round(at[0]),Math.round(at[1]))});await db.batch([db.prepare("INSERT INTO boards (owner_id,id,name,pattern,pattern_color,surface,gap,sort,created) VALUES (?,?,?,?,?,?,?,?,?)").bind(owner,id,"AI Market Map","dots","#243641","#071018",22,0,now),...placements]);}

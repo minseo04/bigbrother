@@ -3,6 +3,7 @@ import {database,getWorkspace,initialize,persistArticles} from "@/lib/store";
 import {fetchFeed,newsSources} from "@/lib/feeds";
 import {crawlDue,BATCH} from "@/lib/crawl";
 import type {Briefing,Article} from "@/lib/intelligence";
+export const maxDuration=60;
 const json=(data:unknown,status=200)=>Response.json(data,{status,headers:{"Cache-Control":"private, no-store"}});
 const pendingByOwner=new Map<string,Promise<Briefing>>();
 export async function GET(request:Request){const owner=authenticatedUser(request);if(!owner)return unauthorized();try{await initialize(owner);const db=database();const params=new URL(request.url).searchParams;if(params.get("archive")==="1"){const result=await db.prepare("SELECT date FROM briefings WHERE owner_id=? ORDER BY date DESC LIMIT 60").bind(owner).all();return json({dates:result.results.map(r=>r.date)});}
